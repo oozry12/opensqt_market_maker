@@ -267,7 +267,7 @@ func (c *Config) Validate() error {
 		c.Trading.DowntrendDetection.MildThreshold = 0.98 // 默认低于均线2%
 	}
 	if c.Trading.DowntrendDetection.SevereThreshold <= 0 {
-		c.Trading.DowntrendDetection.SevereThreshold = 0.985 // 默认低于均线1.5%
+		c.Trading.DowntrendDetection.SevereThreshold = 0.96 // 默认低于均线4%（需同时连续收阴）
 	}
 	if c.Trading.DowntrendDetection.ConsecutiveDownCount <= 0 {
 		c.Trading.DowntrendDetection.ConsecutiveDownCount = 6 // 默认连续6根收阴

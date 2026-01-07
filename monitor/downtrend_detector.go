@@ -191,10 +191,10 @@ func (d *DowntrendDetector) getConfigLocked() DowntrendConfig {
 		result.MAWindow = 20
 	}
 	if result.MildThreshold <= 0 {
-		result.MildThreshold = 0.98
+		result.MildThreshold = 0.98 // 低于均线2%触发轻度下跌
 	}
 	if result.SevereThreshold <= 0 {
-		result.SevereThreshold = 0.985
+		result.SevereThreshold = 0.96 // 低于均线4%触发严重阴跌（需同时连续收阴）
 	}
 	if result.ConsecutiveDownCount <= 0 {
 		result.ConsecutiveDownCount = 6
@@ -332,10 +332,11 @@ func (d *DowntrendDetector) detect() {
 	// 2. 获取当前价格（最新K线收盘价）
 	currentPrice := closedCandles[len(closedCandles)-1].Close
 
-	// 3. 计算连续收阴K线数
+	// 3. 计算连续收阴K线数（阴线 = 收盘价 < 开盘价）
 	d.consecutiveDowns = 0
-	for i := len(closedCandles) - 1; i > 0 && d.consecutiveDowns < cfg.ConsecutiveDownCount+2; i-- {
-		if closedCandles[i].Close < closedCandles[i-1].Close {
+	for i := len(closedCandles) - 1; i >= 0 && d.consecutiveDowns < cfg.ConsecutiveDownCount+2; i-- {
+		// 阴线判断：收盘价 < 开盘价
+		if closedCandles[i].Close < closedCandles[i].Open {
 			d.consecutiveDowns++
 		} else {
 			break
@@ -343,9 +344,15 @@ func (d *DowntrendDetector) detect() {
 	}
 
 	// 4. 判定趋势级别
+	// priceToMA = 当前价格 / MA20
+	// 例如: priceToMA = 0.97 表示价格低于均线3%
+	// MildThreshold = 0.98 表示低于均线2%触发轻度下跌
+	// SevereThreshold = 0.96 表示低于均线4%触发严重阴跌（需要同时满足连续收阴）
 	priceToMA := currentPrice / d.ma20
 	oldLevel := d.currentLevel
 
+	// 严重阴跌条件：价格严重低于均线 且 连续收阴
+	// 注意：SevereThreshold 应该比 MildThreshold 更小（更严格）
 	if priceToMA < cfg.SevereThreshold && d.consecutiveDowns >= cfg.ConsecutiveDownCount {
 		// 严重阴跌：价格低于均线 + 连续收阴
 		d.currentLevel = DowntrendSevere
@@ -357,6 +364,10 @@ func (d *DowntrendDetector) detect() {
 	}
 
 	d.lastDetectionTime = time.Now()
+
+	// 调试日志：显示检测详情
+	logger.Debug("🔍 [阴跌检测] 价格:%.4f, MA20:%.4f, 比值:%.4f, 连续阴线:%d根, 级别:%s",
+		currentPrice, d.ma20, priceToMA, d.consecutiveDowns, d.currentLevel.String())
 
 	// 状态变化时打印日志
 	if d.currentLevel != oldLevel {
