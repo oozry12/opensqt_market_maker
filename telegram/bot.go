@@ -116,12 +116,12 @@ func (b *Bot) sendHelp(chatID int64) {
 	help := `🤖 *OpenSQT 交易控制*
 
 *可用命令:*
-/run - 启动交易程序
+/run - 启动交易程序 (go run main.go)
 /stop - 停止交易程序
 /restart - 重启交易程序
 /status - 查看运行状态
 /logs - 查看最近日志
-/update - 拉取更新并重新编译
+/update - 拉取代码更新 (git pull)
 /help - 显示帮助`
 
 	msg := tgbotapi.NewMessage(chatID, help)
@@ -141,15 +141,27 @@ func (b *Bot) startTrading(chatID int64) {
 
 	b.sendMessage(chatID, "🚀 正在启动交易程序...")
 
-	// 构建可执行文件完整路径
-	exePath := filepath.Join(b.workDir, b.exeName)
+	// 构建配置文件路径
 	configPath := b.configPath
 	if !filepath.IsAbs(configPath) {
 		configPath = filepath.Join(b.workDir, configPath)
 	}
 
-	// 启动交易程序
-	cmd := exec.Command(exePath, configPath)
+	// 检查配置文件是否存在
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		b.sendMessage(chatID, fmt.Sprintf("❌ 配置文件不存在: %s", configPath))
+		return
+	}
+
+	// 检查 main.go 是否存在
+	mainFile := filepath.Join(b.workDir, "main.go")
+	if _, err := os.Stat(mainFile); os.IsNotExist(err) {
+		b.sendMessage(chatID, fmt.Sprintf("❌ main.go 不存在: %s", mainFile))
+		return
+	}
+
+	// 使用 go run main.go 启动
+	cmd := exec.Command("go", "run", "main.go", configPath)
 	cmd.Dir = b.workDir
 
 	// 获取输出管道
@@ -186,7 +198,7 @@ func (b *Bot) startTrading(chatID int64) {
 	// 监控进程退出
 	go b.watchProcess(chatID)
 
-	b.sendMessage(chatID, fmt.Sprintf("✅ 交易程序已启动\n📁 路径: %s\n⚙️ 配置: %s", exePath, configPath))
+	b.sendMessage(chatID, fmt.Sprintf("✅ 交易程序已启动\n📁 目录: %s\n⚙️ 配置: %s\n🚀 命令: go run main.go", b.workDir, configPath))
 }
 
 // stopTrading 停止交易程序
@@ -265,7 +277,8 @@ func (b *Bot) sendStatus(chatID int64) {
 ⏱ 运行时间: %v
 🔢 进程PID: %d
 📁 工作目录: %s
-⚙️ 配置文件: %s`, uptime, pid, b.workDir, b.configPath)
+⚙️ 配置文件: %s
+🚀 启动命令: go run main.go`, uptime, pid, b.workDir, b.configPath)
 	} else {
 		status = fmt.Sprintf(`❌ *交易程序未运行*
 
@@ -404,7 +417,7 @@ func (b *Bot) Stop() {
 	b.api.StopReceivingUpdates()
 }
 
-// gitPullAndRebuild 拉取更新并重新编译
+// gitPullAndRebuild 拉取更新
 func (b *Bot) gitPullAndRebuild(chatID int64) {
 	b.tradingMu.Lock()
 	wasRunning := b.isRunning
@@ -431,33 +444,10 @@ func (b *Bot) gitPullAndRebuild(chatID int64) {
 
 	b.sendMessage(chatID, fmt.Sprintf("✅ Git pull 完成:\n```\n%s\n```", string(pullOutput)))
 
-	// 检查是否有更新
-	if contains(string(pullOutput), "Already up to date") || contains(string(pullOutput), "已经是最新") {
-		b.sendMessage(chatID, "ℹ️ 代码已是最新，无需重新编译")
-		if wasRunning {
-			b.sendMessage(chatID, "🔄 重新启动交易程序...")
-			b.startTrading(chatID)
-		}
-		return
-	}
-
-	// 重新编译
-	b.sendMessage(chatID, "🔨 正在重新编译...")
-
-	buildCmd := exec.Command("go", "build", "-o", b.exeName, ".")
-	buildCmd.Dir = b.workDir
-	buildOutput, err := buildCmd.CombinedOutput()
-
-	if err != nil {
-		b.sendMessage(chatID, fmt.Sprintf("❌ 编译失败:\n```\n%s\n```", string(buildOutput)))
-		return
-	}
-
-	b.sendMessage(chatID, "✅ 编译完成")
-
 	// 如果之前在运行，重新启动
 	if wasRunning {
 		b.sendMessage(chatID, "🔄 重新启动交易程序...")
+		time.Sleep(1 * time.Second)
 		b.startTrading(chatID)
 	}
 }
