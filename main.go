@@ -444,6 +444,14 @@ func (a *positionExchangeAdapter) CancelAllOrders(ctx context.Context, symbol st
 	return a.exchange.CancelAllOrders(ctx, symbol)
 }
 
+func (a *positionExchangeAdapter) GetAvailableBalance(ctx context.Context) (float64, error) {
+	account, err := a.exchange.GetAccount(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return account.AvailableBalance, nil
+}
+
 // exchangeExecutorAdapter 适配器，将 order.ExchangeOrderExecutor 转换为 position.OrderExecutorInterface
 type exchangeExecutorAdapter struct {
 	executor *order.ExchangeOrderExecutor

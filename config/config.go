@@ -31,6 +31,7 @@ type Config struct {
 		CleanupBatchSize      int     `yaml:"cleanup_batch_size"`           // 清理批次大小（默认10）
 		MarginLockDurationSec int     `yaml:"margin_lock_duration_seconds"` // 保证金锁定时间（秒，默认10）
 		PositionSafetyCheck   int     `yaml:"position_safety_check"`        // 持仓安全性检查（默认100，最少能向下持有多少仓）
+		MinMarginBalance      float64 `yaml:"min_margin_balance"`           // 最小保证金余额（USDT），低于此值停止下买单，默认5U
 		// 注意：price_decimals 和 quantity_decimals 已废弃，现在从交易所自动获取
 
 		// 动态网格配置
@@ -239,6 +240,9 @@ func (c *Config) Validate() error {
 	// 注意：price_decimals 和 quantity_decimals 已从配置中移除，现在从交易所自动获取
 	if c.Trading.MinOrderValue <= 0 {
 		c.Trading.MinOrderValue = 20.0 // 默认20U
+	}
+	if c.Trading.MinMarginBalance <= 0 {
+		c.Trading.MinMarginBalance = 5.0 // 默认5U，低于此值停止下买单
 	}
 
 	// 动态网格配置默认值

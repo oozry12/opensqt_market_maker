@@ -127,6 +127,7 @@ type IExchange interface {
 	GetOrder(ctx context.Context, symbol string, orderID int64) (interface{}, error)
 	GetBaseAsset() string                                     // 获取基础资产（交易币种）
 	CancelAllOrders(ctx context.Context, symbol string) error // 取消所有订单
+	GetAvailableBalance(ctx context.Context) (float64, error) // 获取可用保证金
 }
 
 // SuperPositionManager 超级仓位管理器
@@ -151,6 +152,7 @@ type SuperPositionManager struct {
 	insufficientMargin bool
 	marginLockTime     time.Time
 	marginLockDuration time.Duration
+	lowBalanceWarned   bool // 是否已警告过余额不足
 
 	// 动态网格计算器
 	dynamicGridCalc *monitor.DynamicGridCalculator
