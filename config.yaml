@@ -166,20 +166,18 @@ system:
 
 # 主动安全风控配置（基于移动平均线）
 risk_control:
-  enabled: true               # 是否启用风控（默认开启true,关闭用false）
-  
-  # 监控的主流币种（用于判断市场整体情绪）
+  enabled: true
   monitor_symbols:
     - "BTCUSDT"
     - "ETHUSDT"
     - "SOLUSDT"
     - "XRPUSDT"
     - "DOGEUSDT"
-  
-  interval: "1m"              # K线周期：1m / 3m / 5m
-  volume_multiplier: 3.0      # 成交量倍数：当前量 > 均值×3倍视为异常
-  average_window: 20          # 移动平均窗口：50根K线
-  recovery_threshold: 3       # 恢复交易所需的正常币种数量（默认3个币种恢复正常即可恢复交易）
-  
+  interval: "1m"
+  volume_multiplier: 2.5
+  average_window: 20
+  trigger_threshold: 1      
+  recovery_threshold: 4
+
   # 触发条件：当前价格 < 移动均价 且 成交量 > 均值×倍数
   # 解除条件：至少 recovery_threshold 个币种满足（当前价格 > 移动均价 且 成交量 < 均值×倍数）

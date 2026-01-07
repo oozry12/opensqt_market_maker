@@ -205,15 +205,17 @@ func (r *RiskMonitor) checkMarket() {
 			}
 		}
 
-		// 全部币种都出现异常时才触发
+		// 多数币种异常时触发
+		triggerThreshold := r.cfg.RiskControl.TriggerThreshold
+
 		r.mu.Lock()
-		if panicCount > 0 && panicCount >= len(r.cfg.RiskControl.MonitorSymbols) {
+		if panicCount >= triggerThreshold {
 			logger.Warn("🚨🚨🚨 触发主动安全风控！市场出现集体异动！🚨🚨🚨")
-			logger.Warn("详情: %s", strings.Join(details, ", "))
+			logger.Warn("详情: %d/%d 币种异常 (阈值: %d) - %s", panicCount, len(r.cfg.RiskControl.MonitorSymbols), triggerThreshold, strings.Join(details, ", "))
 			r.triggered = true
 			r.lastMsg = fmt.Sprintf("触发风控: %d/%d 币种异常 (%s)", panicCount, len(r.cfg.RiskControl.MonitorSymbols), strings.Join(details, ","))
 		} else {
-			r.lastMsg = "监控正常"
+			r.lastMsg = fmt.Sprintf("监控正常 (%d/%d 异常, 阈值%d)", panicCount, len(r.cfg.RiskControl.MonitorSymbols), triggerThreshold)
 		}
 		r.mu.Unlock()
 	}

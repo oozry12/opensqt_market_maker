@@ -69,6 +69,7 @@ type Config struct {
 		Interval          string   `yaml:"interval"`           // K线周期，如 "1m", "3m", "5m"
 		VolumeMultiplier  float64  `yaml:"volume_multiplier"`  // 成交量倍数阈值，默认3.0
 		AverageWindow     int      `yaml:"average_window"`     // 移动平均窗口大小，默认20
+		TriggerThreshold  int      `yaml:"trigger_threshold"`  // 触发风控所需的异常币种数量，默认一半
 		RecoveryThreshold int      `yaml:"recovery_threshold"` // 恢复交易所需的正常币种数量，默认3
 	} `yaml:"risk_control"`	// 时间间隔配置（单位：秒，除非特别说明）
 	Timing struct {
@@ -342,6 +343,17 @@ func (c *Config) Validate() error {
 		c.RiskControl.RecoveryThreshold = 1 // 最小1个
 	} else if c.RiskControl.RecoveryThreshold > monitorCount {
 		c.RiskControl.RecoveryThreshold = monitorCount // 最大为监控币种数量
+	}
+
+	// 验证触发阈值配置
+	if c.RiskControl.TriggerThreshold <= 0 {
+		c.RiskControl.TriggerThreshold = (monitorCount + 1) / 2 // 默认一半（向上取整）
+	}
+	if c.RiskControl.TriggerThreshold < 2 {
+		c.RiskControl.TriggerThreshold = 2 // 最小2个
+	}
+	if c.RiskControl.TriggerThreshold > monitorCount {
+		c.RiskControl.TriggerThreshold = monitorCount
 	}
 
 	return nil
