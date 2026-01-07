@@ -111,10 +111,12 @@ type BinanceAdapter struct {
 	symbol           string
 	wsManager        *WebSocketManager
 	klineWSManager   *KlineWebSocketManager
-	priceDecimals    int    // 价格精度（小数位数）
-	quantityDecimals int    // 数量精度（小数位数）
-	baseAsset        string // 基础资产（交易币种），如 BTC
-	quoteAsset       string // 计价资产（结算币种），如 USDT、USD
+	priceDecimals    int     // 价格精度（小数位数）
+	quantityDecimals int     // 数量精度（小数位数）
+	tickSize         float64 // 最小价格变动单位
+	stepSize         float64 // 最小数量变动单位
+	baseAsset        string  // 基础资产（交易币种），如 BTC
+	quoteAsset       string  // 计价资产（结算币种），如 USDT、USD
 }
 
 // NewBinanceAdapter 创建币安适配器
@@ -173,8 +175,31 @@ func (b *BinanceAdapter) fetchExchangeInfo(ctx context.Context) error {
 			b.baseAsset = symbol.BaseAsset
 			b.quoteAsset = symbol.QuoteAsset
 
-			logger.Info("ℹ️ [Binance 合约信息] %s - 数量精度:%d, 价格精度:%d, 基础币种:%s, 计价币种:%s",
-				b.symbol, b.quantityDecimals, b.priceDecimals, b.baseAsset, b.quoteAsset)
+			// 解析过滤器获取 tickSize 和 stepSize
+			for _, filter := range symbol.Filters {
+				filterType, ok := filter["filterType"].(string)
+				if !ok {
+					continue
+				}
+
+				switch filterType {
+				case "PRICE_FILTER":
+					if tickSize, ok := filter["tickSize"].(string); ok {
+						b.tickSize, _ = strconv.ParseFloat(tickSize, 64)
+						// 根据 tickSize 重新计算价格精度
+						b.priceDecimals = countDecimalPlaces(b.tickSize)
+					}
+				case "LOT_SIZE":
+					if stepSize, ok := filter["stepSize"].(string); ok {
+						b.stepSize, _ = strconv.ParseFloat(stepSize, 64)
+						// 根据 stepSize 重新计算数量精度
+						b.quantityDecimals = countDecimalPlaces(b.stepSize)
+					}
+				}
+			}
+
+			logger.Info("ℹ️ [Binance 合约信息] %s - 价格精度:%d (tickSize:%.8f), 数量精度:%d (stepSize:%.8f), 基础币种:%s",
+				b.symbol, b.priceDecimals, b.tickSize, b.quantityDecimals, b.stepSize, b.baseAsset)
 			return nil
 		}
 	}
@@ -182,10 +207,47 @@ func (b *BinanceAdapter) fetchExchangeInfo(ctx context.Context) error {
 	return fmt.Errorf("未找到合约信息: %s", b.symbol)
 }
 
+// countDecimalPlaces 计算小数位数
+func countDecimalPlaces(value float64) int {
+	if value >= 1 {
+		return 0
+	}
+	str := strconv.FormatFloat(value, 'f', -1, 64)
+	parts := strings.Split(str, ".")
+	if len(parts) != 2 {
+		return 0
+	}
+	// 去除尾部的0
+	decimal := strings.TrimRight(parts[1], "0")
+	return len(decimal)
+}
+
+// alignToTickSize 将价格/数量对齐到最小变动单位
+// 使用向下取整，确保不会超出预期价格
+func alignToTickSize(value, tickSize float64) float64 {
+	if tickSize <= 0 {
+		return value
+	}
+	// 计算倍数（向下取整）
+	multiplier := int64(value / tickSize)
+	return float64(multiplier) * tickSize
+}
+
 // PlaceOrder 下单
 func (b *BinanceAdapter) PlaceOrder(ctx context.Context, req *OrderRequest) (*Order, error) {
-	priceStr := fmt.Sprintf("%.*f", req.PriceDecimals, req.Price)
-	quantityStr := fmt.Sprintf("%.4f", req.Quantity)
+	// 对齐价格到 tickSize
+	price := req.Price
+	if b.tickSize > 0 {
+		price = alignToTickSize(price, b.tickSize)
+	}
+	priceStr := fmt.Sprintf("%.*f", b.priceDecimals, price)
+
+	// 对齐数量到 stepSize
+	quantity := req.Quantity
+	if b.stepSize > 0 {
+		quantity = alignToTickSize(quantity, b.stepSize)
+	}
+	quantityStr := fmt.Sprintf("%.*f", b.quantityDecimals, quantity)
 
 	// 根据 PostOnly 参数选择 TimeInForce
 	timeInForce := futures.TimeInForceTypeGTC
