@@ -35,12 +35,25 @@ type Config struct {
 
 		// 动态网格配置
 		DynamicGrid struct {
-			Enabled       bool    `yaml:"enabled"`        // 是否启用动态网格（默认false）
-			ATRPeriod     int     `yaml:"atr_period"`     // ATR计算周期（默认14）
-			ATRInterval   string  `yaml:"atr_interval"`   // ATR使用的K线周期（默认"5m"）
-			ATRMultiplier float64 `yaml:"atr_multiplier"` // ATR乘数（默认0.8）
+			Enabled       bool    `yaml:"enabled"`         // 是否启用动态网格（默认false）
+			ATRPeriod     int     `yaml:"atr_period"`      // ATR计算周期（默认14）
+			ATRInterval   string  `yaml:"atr_interval"`    // ATR使用的K线周期（默认"5m"）
+			ATRMultiplier float64 `yaml:"atr_multiplier"`  // ATR乘数（默认0.8）
 			MinProfitRate float64 `yaml:"min_profit_rate"` // 最小利润率（默认0.001即0.1%）
 		} `yaml:"dynamic_grid"`
+
+		// 阴跌检测配置（均线压制 + 连续收阴）
+		DowntrendDetection struct {
+			Enabled              bool    `yaml:"enabled"`                // 是否启用阴跌检测（默认false）
+			MAWindow             int     `yaml:"ma_window"`              // 均线周期（默认20）
+			MildThreshold        float64 `yaml:"mild_threshold"`         // 轻度下跌阈值（默认0.98，价格<MA×0.98）
+			SevereThreshold      float64 `yaml:"severe_threshold"`       // 严重下跌阈值（默认0.985，价格<MA×0.985）
+			ConsecutiveDownCount int     `yaml:"consecutive_down_count"` // 连续收阴K线数（默认6）
+			MildMultiplier       float64 `yaml:"mild_multiplier"`        // 轻度下跌买入乘数（默认0.8）
+			SevereMultiplier     float64 `yaml:"severe_multiplier"`      // 严重阴跌买入乘数（默认0.6）
+			SevereWindowRatio    float64 `yaml:"severe_window_ratio"`    // 严重阴跌买单窗口比例（默认0.3）
+			KlineInterval        string  `yaml:"kline_interval"`         // K线周期（默认"5m"）
+		} `yaml:"downtrend_detection"`
 	} `yaml:"trading"`
 
 	System struct {
@@ -56,9 +69,7 @@ type Config struct {
 		VolumeMultiplier  float64  `yaml:"volume_multiplier"`  // 成交量倍数阈值，默认3.0
 		AverageWindow     int      `yaml:"average_window"`     // 移动平均窗口大小，默认20
 		RecoveryThreshold int      `yaml:"recovery_threshold"` // 恢复交易所需的正常币种数量，默认3
-	} `yaml:"risk_control"`
-
-	// 时间间隔配置（单位：秒，除非特别说明）
+	} `yaml:"risk_control"`	// 时间间隔配置（单位：秒，除非特别说明）
 	Timing struct {
 		// WebSocket相关
 		WebSocketReconnectDelay    int `yaml:"websocket_reconnect_delay"`     // WebSocket断线重连等待时间（秒，默认5）
@@ -242,6 +253,32 @@ func (c *Config) Validate() error {
 	}
 	if c.Trading.DynamicGrid.MinProfitRate <= 0 {
 		c.Trading.DynamicGrid.MinProfitRate = 0.001 // 默认0.1%最小利润
+	}
+
+	// 阴跌检测配置默认值
+	if c.Trading.DowntrendDetection.MAWindow <= 0 {
+		c.Trading.DowntrendDetection.MAWindow = 20 // 默认20周期均线
+	}
+	if c.Trading.DowntrendDetection.MildThreshold <= 0 {
+		c.Trading.DowntrendDetection.MildThreshold = 0.98 // 默认低于均线2%
+	}
+	if c.Trading.DowntrendDetection.SevereThreshold <= 0 {
+		c.Trading.DowntrendDetection.SevereThreshold = 0.985 // 默认低于均线1.5%
+	}
+	if c.Trading.DowntrendDetection.ConsecutiveDownCount <= 0 {
+		c.Trading.DowntrendDetection.ConsecutiveDownCount = 6 // 默认连续6根收阴
+	}
+	if c.Trading.DowntrendDetection.MildMultiplier <= 0 {
+		c.Trading.DowntrendDetection.MildMultiplier = 0.8 // 默认买入打8折
+	}
+	if c.Trading.DowntrendDetection.SevereMultiplier <= 0 {
+		c.Trading.DowntrendDetection.SevereMultiplier = 0.6 // 默认买入打6折
+	}
+	if c.Trading.DowntrendDetection.SevereWindowRatio <= 0 {
+		c.Trading.DowntrendDetection.SevereWindowRatio = 0.3 // 默认只挂30%买单
+	}
+	if c.Trading.DowntrendDetection.KlineInterval == "" {
+		c.Trading.DowntrendDetection.KlineInterval = "5m" // 默认5分钟K线
 	}
 
 	// 设置默认时间间隔

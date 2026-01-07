@@ -156,6 +156,9 @@ type SuperPositionManager struct {
 	dynamicGridCalc *monitor.DynamicGridCalculator
 	atrCalculator   *monitor.ATRCalculator
 
+	// 阴跌检测器
+	downtrendDetector *monitor.DowntrendDetector
+
 	// 统计（注意：以下字段被 safety.Reconciler 和 PrintPositions 使用，不可删除）
 	totalBuyQty       atomic.Value // float64 - 累计买入数量
 	totalSellQty      atomic.Value // float64 - 累计卖出数量
@@ -199,6 +202,11 @@ func (spm *SuperPositionManager) SetDynamicGridCalculator(calc *monitor.DynamicG
 // SetATRCalculator 设置ATR计算器
 func (spm *SuperPositionManager) SetATRCalculator(atr *monitor.ATRCalculator) {
 	spm.atrCalculator = atr
+}
+
+// SetDowntrendDetector 设置阴跌检测器
+func (spm *SuperPositionManager) SetDowntrendDetector(detector *monitor.DowntrendDetector) {
+	spm.downtrendDetector = detector
 }
 
 // GetCurrentPriceInterval 获取当前有效的价格间距
@@ -331,7 +339,21 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 	// 计算需要监控的价格范围
 	buyWindowSize := spm.config.Trading.BuyWindowSize
 	sellWindowSize := spm.config.Trading.SellWindowSize
-	
+
+	// 🔥 阴跌检测：调整买单窗口大小和买入数量
+	buyMultiplier := 1.0
+	if spm.downtrendDetector != nil && spm.downtrendDetector.IsEnabled() {
+		buyMultiplier = spm.downtrendDetector.GetBuyMultiplier()
+		windowRatio := spm.downtrendDetector.GetWindowRatio()
+		if windowRatio < 1.0 {
+			// 严重阴跌时减少买单窗口
+			buyWindowSize = int(float64(buyWindowSize) * windowRatio)
+			if buyWindowSize < 1 {
+				buyWindowSize = 1
+			}
+		}
+	}
+
 	// 🔥 使用动态网格间距（如果启用）
 	priceInterval := spm.GetCurrentPriceInterval(currentPrice)
 
@@ -430,6 +452,8 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 			}
 
 			quantity := spm.config.Trading.OrderQuantity / price
+			// 🔥 阴跌检测：应用买入数量乘数
+			quantity = quantity * buyMultiplier
 			// 使用从交易所获取的数量精度
 			quantity = roundPrice(quantity, spm.quantityDecimals)
 
@@ -1363,6 +1387,19 @@ func (spm *SuperPositionManager) PrintPositions() {
 		base, breakEven, atrBased, final := spm.dynamicGridCalc.GetIntervalComponents(lastPrice)
 		logger.Info("📐 [动态网格] 当前间距: %.4f (基础:%.4f, 保本:%.4f, ATR:%.4f)",
 			final, base, breakEven, atrBased)
+	}
+
+	// 打印阴跌检测状态（如果启用）
+	if spm.downtrendDetector != nil && spm.downtrendDetector.IsEnabled() {
+		level, ma20, consecutiveDowns, multiplier, windowRatio := spm.downtrendDetector.GetStatus()
+		levelIcon := "✅"
+		if level == monitor.DowntrendMild {
+			levelIcon = "🔻"
+		} else if level == monitor.DowntrendSevere {
+			levelIcon = "🔻🔻"
+		}
+		logger.Info("%s [阴跌检测] %s | MA20: %.4f | 连续收阴: %d根 | 买入×%.1f | 窗口×%.1f",
+			levelIcon, level.String(), ma20, consecutiveDowns, multiplier, windowRatio)
 	}
 
 	// === 新增：打印买单窗口详细信息 ===

@@ -161,6 +161,17 @@ func main() {
 		logger.Info("📐 使用固定网格间距: %.4f", cfg.Trading.PriceInterval)
 	}
 
+	// === 新增：初始化阴跌检测器（如果启用）===
+	var downtrendDetector *monitor.DowntrendDetector
+	if cfg.Trading.DowntrendDetection.Enabled {
+		logger.Info("🔻 阴跌检测已启用，正在初始化...")
+		downtrendDetector = monitor.NewDowntrendDetector(cfg, ex, cfg.Trading.Symbol)
+		superPositionManager.SetDowntrendDetector(downtrendDetector)
+		logger.Info("✅ 阴跌检测器已创建 (MA周期: %d, 连续收阴: %d根)",
+			cfg.Trading.DowntrendDetection.MAWindow,
+			cfg.Trading.DowntrendDetection.ConsecutiveDownCount)
+	}
+
 	// === 新增：初始化风控监视器 ===
 	riskMonitor := safety.NewRiskMonitor(cfg, ex)
 
@@ -273,6 +284,13 @@ func main() {
 		}
 	}
 
+	// 启动阴跌检测器（如果启用）
+	if downtrendDetector != nil {
+		if err := downtrendDetector.Start(ctx); err != nil {
+			logger.Warn("⚠️ 阴跌检测器启动失败: %v", err)
+		}
+	}
+
 	// 10. 监听价格变化,调整订单窗口（实时调整，不打印价格变化日志）
 	go func() {
 		priceCh := priceMonitor.Subscribe()
@@ -363,6 +381,12 @@ func main() {
 	if atrCalculator != nil {
 		logger.Info("⏹️ 正在停止ATR计算器...")
 		atrCalculator.Stop()
+	}
+
+	// 停止阴跌检测器
+	if downtrendDetector != nil {
+		logger.Info("⏹️ 正在停止阴跌检测器...")
+		downtrendDetector.Stop()
 	}
 
 	// 等待一小段时间，让协程完成清理（避免强制退出导致日志丢失）
