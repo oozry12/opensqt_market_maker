@@ -131,6 +131,36 @@ func main() {
 	exchangeAdapter := &positionExchangeAdapter{exchange: ex}
 	superPositionManager := position.NewSuperPositionManager(cfg, executorAdapter, exchangeAdapter, priceDecimals, quantityDecimals)
 
+	// === 新增：初始化动态网格计算器（如果启用）===
+	var atrCalculator *monitor.ATRCalculator
+	var dynamicGridCalc *monitor.DynamicGridCalculator
+
+	if cfg.Trading.DynamicGrid.Enabled {
+		logger.Info("📐 动态网格已启用，正在初始化ATR计算器...")
+
+		// 创建ATR计算器
+		atrCalculator = monitor.NewATRCalculator(
+			ex,
+			cfg.Trading.Symbol,
+			cfg.Trading.DynamicGrid.ATRInterval,
+			cfg.Trading.DynamicGrid.ATRPeriod,
+		)
+
+		// 创建动态网格计算器
+		dynamicGridCalc = monitor.NewDynamicGridCalculator(cfg, atrCalculator, priceDecimals)
+
+		// 注入到仓位管理器
+		superPositionManager.SetATRCalculator(atrCalculator)
+		superPositionManager.SetDynamicGridCalculator(dynamicGridCalc)
+
+		logger.Info("✅ 动态网格计算器已创建 (ATR周期: %s, ATR窗口: %d, 乘数: %.2f)",
+			cfg.Trading.DynamicGrid.ATRInterval,
+			cfg.Trading.DynamicGrid.ATRPeriod,
+			cfg.Trading.DynamicGrid.ATRMultiplier)
+	} else {
+		logger.Info("📐 使用固定网格间距: %.4f", cfg.Trading.PriceInterval)
+	}
+
 	// === 新增：初始化风控监视器 ===
 	riskMonitor := safety.NewRiskMonitor(cfg, ex)
 
@@ -236,6 +266,13 @@ func main() {
 	// 启动风控监控
 	go riskMonitor.Start(ctx)
 
+	// 启动ATR计算器（如果启用动态网格）
+	if atrCalculator != nil {
+		if err := atrCalculator.Start(ctx); err != nil {
+			logger.Warn("⚠️ ATR计算器启动失败: %v，将使用固定网格间距", err)
+		}
+	}
+
 	// 10. 监听价格变化,调整订单窗口（实时调整，不打印价格变化日志）
 	go func() {
 		priceCh := priceMonitor.Subscribe()
@@ -321,6 +358,12 @@ func main() {
 
 	logger.Info("⏹️ 正在停止风控监视器...")
 	riskMonitor.Stop()
+
+	// 停止ATR计算器
+	if atrCalculator != nil {
+		logger.Info("⏹️ 正在停止ATR计算器...")
+		atrCalculator.Stop()
+	}
 
 	// 等待一小段时间，让协程完成清理（避免强制退出导致日志丢失）
 	time.Sleep(500 * time.Millisecond)

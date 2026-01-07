@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -30,6 +32,15 @@ type Config struct {
 		MarginLockDurationSec int     `yaml:"margin_lock_duration_seconds"` // 保证金锁定时间（秒，默认10）
 		PositionSafetyCheck   int     `yaml:"position_safety_check"`        // 持仓安全性检查（默认100，最少能向下持有多少仓）
 		// 注意：price_decimals 和 quantity_decimals 已废弃，现在从交易所自动获取
+
+		// 动态网格配置
+		DynamicGrid struct {
+			Enabled       bool    `yaml:"enabled"`        // 是否启用动态网格（默认false）
+			ATRPeriod     int     `yaml:"atr_period"`     // ATR计算周期（默认14）
+			ATRInterval   string  `yaml:"atr_interval"`   // ATR使用的K线周期（默认"5m"）
+			ATRMultiplier float64 `yaml:"atr_multiplier"` // ATR乘数（默认0.8）
+			MinProfitRate float64 `yaml:"min_profit_rate"` // 最小利润率（默认0.001即0.1%）
+		} `yaml:"dynamic_grid"`
 	} `yaml:"trading"`
 
 	System struct {
@@ -78,6 +89,9 @@ type ExchangeConfig struct {
 
 // LoadConfig 加载配置文件
 func LoadConfig(configPath string) (*Config, error) {
+	// 先加载 .env 文件（如果存在）
+	loadEnvFile(".env")
+
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("读取配置文件失败: %v", err)
@@ -88,11 +102,86 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("解析配置文件失败: %v", err)
 	}
 
+	// 从环境变量加载敏感配置（覆盖配置文件中的值）
+	cfg.loadFromEnv()
+
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("配置验证失败: %v", err)
 	}
 
 	return &cfg, nil
+}
+
+// loadEnvFile 从 .env 文件加载环境变量
+// 支持格式：KEY=VALUE 或 KEY="VALUE" 或 KEY='VALUE'
+// 忽略空行和 # 开头的注释行
+func loadEnvFile(filename string) {
+	file, err := os.Open(filename)
+	if err != nil {
+		// .env 文件不存在是正常的，不报错
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// 跳过空行和注释
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// 解析 KEY=VALUE
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// 移除引号（支持 "value" 或 'value'）
+		if len(value) >= 2 {
+			if (value[0] == '"' && value[len(value)-1] == '"') ||
+				(value[0] == '\'' && value[len(value)-1] == '\'') {
+				value = value[1 : len(value)-1]
+			}
+		}
+
+		// 只有当环境变量未设置时才从 .env 加载（系统环境变量优先）
+		if os.Getenv(key) == "" {
+			os.Setenv(key, value)
+		}
+	}
+}
+
+// loadFromEnv 从环境变量加载敏感配置
+// 环境变量命名规则：{EXCHANGE}_API_KEY, {EXCHANGE}_SECRET_KEY, {EXCHANGE}_PASSPHRASE
+// 例如：BINANCE_API_KEY, BITGET_SECRET_KEY, GATE_API_KEY
+func (c *Config) loadFromEnv() {
+	for name, exchangeCfg := range c.Exchanges {
+		// 转换为大写作为环境变量前缀
+		prefix := strings.ToUpper(name)
+
+		// 加载 API Key
+		if envKey := os.Getenv(prefix + "_API_KEY"); envKey != "" {
+			exchangeCfg.APIKey = envKey
+		}
+
+		// 加载 Secret Key
+		if envSecret := os.Getenv(prefix + "_SECRET_KEY"); envSecret != "" {
+			exchangeCfg.SecretKey = envSecret
+		}
+
+		// 加载 Passphrase（Bitget 等需要）
+		if envPass := os.Getenv(prefix + "_PASSPHRASE"); envPass != "" {
+			exchangeCfg.Passphrase = envPass
+		}
+
+		// 更新回 map
+		c.Exchanges[name] = exchangeCfg
+	}
 }
 
 // Validate 验证配置
@@ -138,7 +227,21 @@ func (c *Config) Validate() error {
 	}
 	// 注意：price_decimals 和 quantity_decimals 已从配置中移除，现在从交易所自动获取
 	if c.Trading.MinOrderValue <= 0 {
-		c.Trading.MinOrderValue = 20.0 // 默认6U (币安通常最小5U)
+		c.Trading.MinOrderValue = 20.0 // 默认20U
+	}
+
+	// 动态网格配置默认值
+	if c.Trading.DynamicGrid.ATRPeriod <= 0 {
+		c.Trading.DynamicGrid.ATRPeriod = 14 // 默认14周期
+	}
+	if c.Trading.DynamicGrid.ATRInterval == "" {
+		c.Trading.DynamicGrid.ATRInterval = "5m" // 默认5分钟K线
+	}
+	if c.Trading.DynamicGrid.ATRMultiplier <= 0 {
+		c.Trading.DynamicGrid.ATRMultiplier = 0.8 // 默认0.8倍ATR
+	}
+	if c.Trading.DynamicGrid.MinProfitRate <= 0 {
+		c.Trading.DynamicGrid.MinProfitRate = 0.001 // 默认0.1%最小利润
 	}
 
 	// 设置默认时间间隔

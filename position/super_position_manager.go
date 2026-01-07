@@ -12,6 +12,7 @@ import (
 
 	"opensqt/config"
 	"opensqt/logger"
+	"opensqt/monitor"
 	"opensqt/utils"
 )
 
@@ -151,6 +152,10 @@ type SuperPositionManager struct {
 	marginLockTime     time.Time
 	marginLockDuration time.Duration
 
+	// 动态网格计算器
+	dynamicGridCalc *monitor.DynamicGridCalculator
+	atrCalculator   *monitor.ATRCalculator
+
 	// 统计（注意：以下字段被 safety.Reconciler 和 PrintPositions 使用，不可删除）
 	totalBuyQty       atomic.Value // float64 - 累计买入数量
 	totalSellQty      atomic.Value // float64 - 累计卖出数量
@@ -184,6 +189,25 @@ func NewSuperPositionManager(cfg *config.Config, executor OrderExecutorInterface
 	spm.lastReconcileTime.Store(time.Now())
 	spm.lastMarketPrice.Store(0.0)
 	return spm
+}
+
+// SetDynamicGridCalculator 设置动态网格计算器
+func (spm *SuperPositionManager) SetDynamicGridCalculator(calc *monitor.DynamicGridCalculator) {
+	spm.dynamicGridCalc = calc
+}
+
+// SetATRCalculator 设置ATR计算器
+func (spm *SuperPositionManager) SetATRCalculator(atr *monitor.ATRCalculator) {
+	spm.atrCalculator = atr
+}
+
+// GetCurrentPriceInterval 获取当前有效的价格间距
+// 如果启用了动态网格，返回动态计算的间距；否则返回配置的固定间距
+func (spm *SuperPositionManager) GetCurrentPriceInterval(currentPrice float64) float64 {
+	if spm.dynamicGridCalc != nil && spm.dynamicGridCalc.IsEnabled() {
+		return spm.dynamicGridCalc.CalculateDynamicInterval(currentPrice)
+	}
+	return spm.config.Trading.PriceInterval
 }
 
 // Initialize 初始化管理器（设置价格锚点并创建初始槽位）
@@ -307,15 +331,17 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 	// 计算需要监控的价格范围
 	buyWindowSize := spm.config.Trading.BuyWindowSize
 	sellWindowSize := spm.config.Trading.SellWindowSize
-	priceInterval := spm.config.Trading.PriceInterval
+	
+	// 🔥 使用动态网格间距（如果启用）
+	priceInterval := spm.GetCurrentPriceInterval(currentPrice)
 
-	// 动态计算网格价格
-	currentGridPrice := spm.findNearestGridPrice(currentPrice)
+	// 动态计算网格价格（使用动态间距）
+	currentGridPrice := spm.findNearestGridPriceWithInterval(currentPrice, priceInterval)
 	// logger.Debug("🔄 [实时调整] 当前价格: %s, 网格价格: %s, 买单窗口: %d, 卖单窗口: %d",
 	// 	formatPrice(currentPrice, spm.priceDecimals), formatPrice(currentGridPrice, spm.priceDecimals), buyWindowSize, sellWindowSize)
 
-	// 计算当前网格价格下方buy_window_size个价格
-	slotPrices := spm.calculateSlotPrices(currentGridPrice, buyWindowSize, "down")
+	// 计算当前网格价格下方buy_window_size个价格（使用动态间距）
+	slotPrices := spm.calculateSlotPricesWithInterval(currentGridPrice, buyWindowSize, "down", priceInterval)
 
 	var ordersToPlace []*OrderRequest
 	var activeBuyOrdersInWindow int
@@ -834,12 +860,23 @@ func (spm *SuperPositionManager) getOrCreateSlot(price float64) *InventorySlot {
 // findNearestGridPrice 找到最近的网格价格
 // 根据当前价格动态计算最近的网格对齐价格
 func (spm *SuperPositionManager) findNearestGridPrice(currentPrice float64) float64 {
+	return spm.findNearestGridPriceWithInterval(currentPrice, 0)
+}
+
+// findNearestGridPriceWithInterval 找到最近的网格价格（支持自定义间距）
+func (spm *SuperPositionManager) findNearestGridPriceWithInterval(currentPrice float64, customInterval float64) float64 {
+	// 使用自定义间距或配置的固定间距
+	priceInterval := customInterval
+	if priceInterval <= 0 {
+		priceInterval = spm.config.Trading.PriceInterval
+	}
+
 	// 计算当前价格相对于锚点的偏移量
 	offset := currentPrice - spm.anchorPrice
 	// 计算离当前价格最近的网格间隔数（四舍五入）
-	intervals := math.Round(offset / spm.config.Trading.PriceInterval)
+	intervals := math.Round(offset / priceInterval)
 	// 计算最近的网格价格
-	gridPrice := spm.anchorPrice + intervals*spm.config.Trading.PriceInterval
+	gridPrice := spm.anchorPrice + intervals*priceInterval
 	// 使用检测到的价格精度进行舍入
 	return roundPrice(gridPrice, spm.priceDecimals)
 }
@@ -853,8 +890,19 @@ func (spm *SuperPositionManager) findNearestGridPrice(currentPrice float64) floa
 //
 // 返回：槽位价格列表，从网格价格开始，按价格间隔递减或递增，使用检测到的价格精度
 func (spm *SuperPositionManager) calculateSlotPrices(gridPrice float64, count int, direction string) []float64 {
+	return spm.calculateSlotPricesWithInterval(gridPrice, count, direction, 0)
+}
+
+// calculateSlotPricesWithInterval 计算槽位价格列表（支持自定义间距）
+// 如果 customInterval <= 0，则使用配置的固定间距
+func (spm *SuperPositionManager) calculateSlotPricesWithInterval(gridPrice float64, count int, direction string, customInterval float64) []float64 {
 	var prices []float64
-	priceInterval := spm.config.Trading.PriceInterval
+
+	// 使用自定义间距或配置的固定间距
+	priceInterval := customInterval
+	if priceInterval <= 0 {
+		priceInterval = spm.config.Trading.PriceInterval
+	}
 
 	for i := 0; i < count; i++ {
 		var price float64
@@ -1295,19 +1343,31 @@ func (spm *SuperPositionManager) PrintPositions() {
 	logger.Info("持仓统计: %.4f %s (%d 个槽位)", total, baseCurrency, count)
 	totalBuyQty := spm.totalBuyQty.Load().(float64)
 	totalSellQty := spm.totalSellQty.Load().(float64)
+
+	// 获取最后的市场价格用于计算动态间距
+	lastPrice, ok := spm.lastMarketPrice.Load().(float64)
+	if !ok || lastPrice <= 0 {
+		lastPrice = spm.anchorPrice
+	}
+
+	// 获取当前有效的价格间距
+	currentInterval := spm.GetCurrentPriceInterval(lastPrice)
+
 	// 预计盈利 = 累计卖出数量 × 价格间距（每笔盈利 = 价格间距 × 数量）
-	estimatedProfit := totalSellQty * spm.config.Trading.PriceInterval
+	estimatedProfit := totalSellQty * currentInterval
 	logger.Info("累计买入: %.2f, 累计卖出: %.2f, 预计盈利: %.2f U",
 		totalBuyQty, totalSellQty, estimatedProfit)
+
+	// 打印动态网格信息（如果启用）
+	if spm.dynamicGridCalc != nil && spm.dynamicGridCalc.IsEnabled() {
+		base, breakEven, atrBased, final := spm.dynamicGridCalc.GetIntervalComponents(lastPrice)
+		logger.Info("📐 [动态网格] 当前间距: %.4f (基础:%.4f, 保本:%.4f, ATR:%.4f)",
+			final, base, breakEven, atrBased)
+	}
 
 	// === 新增：打印买单窗口详细信息 ===
 	logger.Info("🔍 ===== 买单窗口状态 =====")
 
-	// 获取最后的市场价格
-	lastPrice, ok := spm.lastMarketPrice.Load().(float64)
-	if !ok || lastPrice <= 0 {
-		lastPrice = spm.anchorPrice // 如果没有更新过，使用锚点价格
-	}
 	logger.Info("当前市场价格: %s", formatPrice(lastPrice, spm.priceDecimals))
 
 	// 收集所有槽位信息（包括买单和空槽位）

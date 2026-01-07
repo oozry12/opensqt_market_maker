@@ -3,47 +3,62 @@ app:
   current_exchange: "bitget"  # 当前使用的交易所: binance, bitget, bybit, gate, edgex
 
 # 多交易所配置
+# 
+# 🔐 安全提示：API密钥支持两种配置方式（环境变量优先级更高）
+#
+# 方式1：环境变量（推荐，更安全）
+#   设置以下环境变量，程序会自动读取：
+#   - BINANCE_API_KEY, BINANCE_SECRET_KEY
+#   - BITGET_API_KEY, BITGET_SECRET_KEY, BITGET_PASSPHRASE
+#   - GATE_API_KEY, GATE_SECRET_KEY
+#   - BYBIT_API_KEY, BYBIT_SECRET_KEY
+#
+# 方式2：配置文件（不推荐，仅用于测试）
+#   直接在下方填写 api_key 和 secret_key
+#
+# 注意：如果同时设置了环境变量和配置文件，环境变量的值会覆盖配置文件
+#
 exchanges:
   binance:
   #币安 开户邀请码【OPENSQT】开户链接：https://accounts.maxweb.chat/register?ref=OPENSQT
-    api_key: "YOUR_API_KEY"
-    secret_key: "YOUR_API_SECRET"
+    api_key: ""               # 或设置环境变量 BINANCE_API_KEY
+    secret_key: ""            # 或设置环境变量 BINANCE_SECRET_KEY
     fee_rate: 0.0000  # USDT 合约手续费率 0.02%
   
   bitget:
   #BITGET 用我链接开户每笔交易省20%手续费 邀请码【opensqt】开户链接：https://partner.hdmune.cn/bg/mtm6553a
-    api_key: "YOUR_API_KEY"
-    secret_key: "YOUR_API_SECRET"
-    passphrase: "YOUR_PASSPHRASE"
+    api_key: ""               # 或设置环境变量 BITGET_API_KEY
+    secret_key: ""            # 或设置环境变量 BITGET_SECRET_KEY
+    passphrase: ""            # 或设置环境变量 BITGET_PASSPHRASE
     fee_rate: 0.0002
 
   bybit:
   #BYBIT 开户邀请码【OPENSQT】开户链接：https://partner.bybit.com/b/OPENSQT
-    api_key: "YOUR_API_KEY"
-    secret_key: ""
+    api_key: ""               # 或设置环境变量 BYBIT_API_KEY
+    secret_key: ""            # 或设置环境变量 BYBIT_SECRET_KEY
     fee_rate: 0.0002
 
   gate:
   #GATE.IO 用我链接开户每笔交易省20%手续费 邀请码【OPENSQTC】开户链接：https://www.gatenode.xyz/share/OPENSQTC
-    api_key: "YOUR_API_KEY"
-    secret_key: "YOUR_API_SECRET"
+    api_key: ""               # 或设置环境变量 GATE_API_KEY
+    secret_key: ""            # 或设置环境变量 GATE_SECRET_KEY
     fee_rate: 0.0002
 
   edgex:
   #EDGEX 用我链接开户直升vip1,每笔交易省20%手续费 邀请码【OPENSQT】开户链接：https://pro.edgex.exchange/referral/OPENSQT
-    api_key: "YOUR_API_KEY"
-    secret_key: "YOUR_API_SECRET"
+    api_key: ""               # 或设置环境变量 EDGEX_API_KEY
+    secret_key: ""            # 或设置环境变量 EDGEX_SECRET_KEY
     fee_rate: 0.0002
     
   bit:
   #bit.com 用我链接开户,每笔交易省50%手续费 邀请码【OPENSQT】开户链接：https://bitweb.bitexch.io/zh-CN/signup?code=OPENSQT
-    api_key: "YOUR_API_KEY"
-    secret_key: "YOUR_API_SECRET"
+    api_key: ""               # 或设置环境变量 BIT_API_KEY
+    secret_key: ""            # 或设置环境变量 BIT_SECRET_KEY
     fee_rate: 0.0002
 ####################################
 
 trading:
-  symbol: "ETHUSDT"
+  symbol: "DOGEUSDC"
   price_interval: 2         # 价格间隔（1美元）
   order_quantity: 30        # 每单购买金额（USDT/USDC）如 30 表示每单投入30U
   min_order_value: 20       # 最小订单价值（USDT），小于此值不挂单（默认20U）
@@ -80,7 +95,25 @@ trading:
   margin_lock_duration_seconds: 20  # 保证金不足时锁定时间（秒，默认10秒）
   
   # 持仓安全性配置
-  position_safety_check: 100        # 持仓安全性检查（默认100，最少能向下持有多少仓）
+  position_safety_check: 18        # 持仓安全性检查（默认100，最少能向下持有多少仓）
+
+  # 动态网格配置（根据波动率自动调整网格密度）
+  dynamic_grid:
+    enabled: true                  # 是否启用动态网格（默认关闭，使用固定间距）
+    atr_period: 14                  # ATR计算周期（默认14根K线）
+    atr_interval: "5m"              # ATR使用的K线周期（1m/5m/15m，默认5m）
+    atr_multiplier: 0.8             # ATR乘数（默认0.8，值越大网格越宽）
+    min_profit_rate: 0.001          # 最小利润率（默认0.1%，确保每单有利润）
+    # 
+    # 动态网格计算逻辑：
+    # 实际间距 = max(基础间距, 保本间距, ATR间距)
+    # - 基础间距: 配置的 price_interval 值
+    # - 保本间距: 当前价格 × (手续费率×2 + 最小利润率)
+    # - ATR间距: ATR(14) × atr_multiplier
+    #
+    # 效果：
+    # - 波动大时：ATR变大 -> 网格变宽 -> 避免频繁交易被套
+    # - 波动小时：ATR变小 -> 网格变窄（但不低于保本间距）-> 抓取微小波动
 
 
 # 时间间隔配置
