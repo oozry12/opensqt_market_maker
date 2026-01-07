@@ -457,6 +457,20 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 			// 使用从交易所获取的数量精度
 			quantity = roundPrice(quantity, spm.quantityDecimals)
 
+			// 🔥 最小名义价值检查（Binance 要求 >= 5 USDT）
+			orderValue := price * quantity
+			minValue := spm.config.Trading.MinOrderValue
+			if minValue <= 0 {
+				minValue = 6.0 // 默认6U，略高于Binance的5U要求
+			}
+			if orderValue < minValue {
+				logger.Debug("⏭️ [跳过买单] 价格 %s 名义价值 %.2f < %.2f，不满足最小订单要求",
+					formatPrice(price, spm.priceDecimals), orderValue, minValue)
+				slot.SlotStatus = SlotStatusFree // 释放槽位锁
+				slot.mu.Unlock()
+				continue
+			}
+
 			// 生成 ClientOrderID
 			clientOID := spm.generateClientOrderID(price, "BUY")
 

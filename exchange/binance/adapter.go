@@ -249,6 +249,12 @@ func (b *BinanceAdapter) PlaceOrder(ctx context.Context, req *OrderRequest) (*Or
 	}
 	quantityStr := fmt.Sprintf("%.*f", b.quantityDecimals, quantity)
 
+	// 检查最小名义价值（Binance 要求 >= 5 USDT）
+	notional := price * quantity
+	if notional < 5.0 && !req.ReduceOnly {
+		return nil, fmt.Errorf("订单名义价值 %.2f USDT 小于最小要求 5 USDT (价格:%.4f × 数量:%.4f)", notional, price, quantity)
+	}
+
 	// 根据 PostOnly 参数选择 TimeInForce
 	timeInForce := futures.TimeInForceTypeGTC
 	if req.PostOnly {
