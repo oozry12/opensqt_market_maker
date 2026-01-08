@@ -121,7 +121,7 @@ trading:
     enabled: true                  # 是否启用阴跌检测（默认关闭）
     ma_window: 20                   # 均线周期（默认20）
     mild_threshold: 0.98            # 轻度下跌阈值（价格 < MA × 0.98，即低于均线2%）
-    severe_threshold: 0.985         # 严重下跌阈值（价格 < MA × 0.985，即低于均线1.5%）
+    severe_threshold: 0.96         # 严重下跌阈值（价格 < MA × 0.96，即低于均线4%）
     consecutive_down_count: 4       # 连续收阴K线数（默认6根）
     mild_multiplier: 0.7            # 轻度下跌时买入数量乘数（打7折）
     severe_multiplier: 0.5          # 严重阴跌时买入数量乘数（打5折）
