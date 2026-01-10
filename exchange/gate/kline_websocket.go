@@ -18,7 +18,7 @@ type KlineWebSocketManager struct {
 	conn           *websocket.Conn
 	mu             sync.RWMutex
 	done           chan struct{}
-	callback       func(candle interface{})
+	callbacks      map[string]func(candle interface{}) // 支持多个回调函数，key为组件名称
 	symbols        []string
 	interval       string
 	reconnectDelay time.Duration
@@ -34,6 +34,7 @@ func NewKlineWebSocketManager(settle string) *KlineWebSocketManager {
 	}
 	return &KlineWebSocketManager{
 		done:           make(chan struct{}),
+		callbacks:      make(map[string]func(candle interface{})),
 		reconnectDelay: 5 * time.Second,
 		pingInterval:   15 * time.Second,
 		settle:         settle,
@@ -43,19 +44,37 @@ func NewKlineWebSocketManager(settle string) *KlineWebSocketManager {
 // Start 启动K线流（带自动重连）
 func (k *KlineWebSocketManager) Start(ctx context.Context, symbols []string, interval string, callback func(candle interface{})) error {
 	k.mu.Lock()
+	defer k.mu.Unlock()
+
 	if k.isRunning {
-		k.mu.Unlock()
-		return fmt.Errorf("K线流已在运行")
+		// 如果K线流已经在运行，只注册回调函数
+		k.callbacks["default"] = callback
+		return nil
 	}
-	k.callback = callback
+
+	// 首次启动，保存配置并启动连接
+	k.callbacks["default"] = callback
 	k.symbols = symbols
 	k.interval = interval
 	k.isRunning = true
-	k.mu.Unlock()
 
 	// 启动连接和重连协程
 	go k.connectLoop(ctx)
 
+	return nil
+}
+
+// RegisterCallback 注册回调函数（支持多个组件共享K线流）
+func (k *KlineWebSocketManager) RegisterCallback(componentName string, callback func(candle interface{})) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
+	if !k.isRunning {
+		return fmt.Errorf("K线流未启动，请先调用Start")
+	}
+
+	k.callbacks[componentName] = callback
+	logger.Info("✅ [Gate K线] 已注册回调函数: %s", componentName)
 	return nil
 }
 
@@ -374,11 +393,16 @@ func (k *KlineWebSocketManager) handleCandleUpdate(msg map[string]interface{}) {
 	}
 
 	k.mu.RLock()
-	callback := k.callback
+	callbacks := make(map[string]func(candle interface{}))
+	for name, cb := range k.callbacks {
+		callbacks[name] = cb
+	}
 	k.mu.RUnlock()
 
-	if callback != nil {
-		callback(candle)
+	for _, callback := range callbacks {
+		if callback != nil {
+			callback(candle)
+		}
 	}
 }
 

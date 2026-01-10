@@ -274,6 +274,10 @@ func (w *gateWrapper) StartKlineStream(ctx context.Context, symbols []string, in
 	})
 }
 
+func (w *gateWrapper) RegisterKlineCallback(componentName string, callback func(candle interface{})) error {
+	return w.adapter.RegisterKlineCallback(componentName, callback)
+}
+
 func (w *gateWrapper) StopKlineStream() error {
 	w.adapter.StopKlineStream()
 	return nil

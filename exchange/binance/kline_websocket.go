@@ -31,7 +31,7 @@ type KlineWebSocketManager struct {
 	conn           *websocket.Conn
 	mu             sync.RWMutex
 	done           chan struct{}
-	callback       func(candle interface{})
+	callbacks      map[string]func(candle interface{}) // 支持多个回调函数，key为组件名称
 	symbols        []string
 	interval       string
 	reconnectDelay time.Duration
@@ -44,6 +44,7 @@ type KlineWebSocketManager struct {
 func NewKlineWebSocketManager() *KlineWebSocketManager {
 	return &KlineWebSocketManager{
 		done:           make(chan struct{}),
+		callbacks:      make(map[string]func(candle interface{})),
 		reconnectDelay: 5 * time.Second,  // 重连延迟
 		pingInterval:   30 * time.Second, // Ping间隔
 		pongWait:       60 * time.Second, // Pong等待超时
@@ -53,19 +54,37 @@ func NewKlineWebSocketManager() *KlineWebSocketManager {
 // Start 启动K线流（带自动重连）
 func (k *KlineWebSocketManager) Start(ctx context.Context, symbols []string, interval string, callback func(candle interface{})) error {
 	k.mu.Lock()
+	defer k.mu.Unlock()
+
 	if k.isRunning {
-		k.mu.Unlock()
-		return fmt.Errorf("K线流已在运行")
+		// 如果K线流已经在运行，只注册回调函数
+		k.callbacks["default"] = callback
+		return nil
 	}
-	k.callback = callback
+
+	// 首次启动，保存配置并启动连接
+	k.callbacks["default"] = callback
 	k.symbols = symbols
 	k.interval = interval
 	k.isRunning = true
-	k.mu.Unlock()
 
 	// 启动连接和重连协程
 	go k.connectLoop(ctx)
 
+	return nil
+}
+
+// RegisterCallback 注册回调函数（支持多个组件共享K线流）
+func (k *KlineWebSocketManager) RegisterCallback(componentName string, callback func(candle interface{})) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
+	if !k.isRunning {
+		return fmt.Errorf("K线流未启动，请先调用Start")
+	}
+
+	k.callbacks[componentName] = callback
+	logger.Info("✅ [Binance K线] 已注册回调函数: %s", componentName)
 	return nil
 }
 
@@ -297,9 +316,18 @@ func (k *KlineWebSocketManager) readLoop(ctx context.Context, conn *websocket.Co
 			IsClosed:  msg.Data.K.X, // 设置K线是否完结
 		}
 
-		// 调用回调（无论K线是否完结都回调）
-		if k.callback != nil {
-			k.callback(candle)
+		// 调用所有回调（无论K线是否完结都回调）
+		k.mu.RLock()
+		callbacks := make(map[string]func(candle interface{}))
+		for name, cb := range k.callbacks {
+			callbacks[name] = cb
+		}
+		k.mu.RUnlock()
+
+		for _, callback := range callbacks {
+			if callback != nil {
+				callback(candle)
+			}
 		}
 	}
 }

@@ -80,9 +80,31 @@ func (r *RiskMonitor) Start(ctx context.Context) {
 	logger.Info("✅ 历史K线数据加载完成，风控系统已就绪")
 
 	// 启动K线流
-	if err := r.exchange.StartKlineStream(ctx, r.cfg.RiskControl.MonitorSymbols, r.cfg.RiskControl.Interval, r.onCandleUpdate); err != nil {
+	err := r.exchange.StartKlineStream(ctx, r.cfg.RiskControl.MonitorSymbols, r.cfg.RiskControl.Interval, r.onCandleUpdate)
+	if err != nil {
 		logger.Error("❌ 启动K线流失败: %v", err)
-		return
+		// 如果K线流已在运行，尝试注册回调
+		if strings.Contains(err.Error(), "K线流已在运行") || strings.Contains(err.Error(), "K线流未启动") {
+			logger.Info("🔄 [风控监控] K线流已在运行，尝试注册回调...")
+			err = r.exchange.RegisterKlineCallback("RiskMonitor", func(candle interface{}) {
+				if candle == nil {
+					return
+				}
+				c, ok := candle.(*exchange.Candle)
+				if !ok {
+					return
+				}
+				r.onCandleUpdate(c)
+			})
+			if err != nil {
+				logger.Error("❌ [风控监控] 注册回调失败: %v", err)
+				return
+			} else {
+				logger.Info("✅ [风控监控] 已注册K线回调")
+			}
+		} else {
+			return
+		}
 	}
 
 	// 启动定期报告协程（每60秒）

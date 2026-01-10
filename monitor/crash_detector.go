@@ -5,6 +5,7 @@ import (
 	"opensqt/config"
 	"opensqt/exchange"
 	"opensqt/logger"
+	"strings"
 	"sync"
 	"time"
 )
@@ -225,8 +226,29 @@ func (d *CrashDetector) subscribeKlineStream() {
 	})
 
 	if err != nil {
-		logger.Warn("⚠️ [暴跌检测] 订阅K线流失败: %v，使用轮询模式", err)
-		d.fallbackPolling()
+		logger.Warn("⚠️ [暴跌检测] 订阅K线流失败: %v", err)
+		// 如果K线流已在运行，尝试注册回调
+		if strings.Contains(err.Error(), "K线流已在运行") || strings.Contains(err.Error(), "K线流未启动") {
+			logger.Info("🔄 [暴跌检测] K线流已在运行，尝试注册回调...")
+			err = d.exchange.RegisterKlineCallback("CrashDetector", func(candle interface{}) {
+				if candle == nil {
+					return
+				}
+				c, ok := candle.(*exchange.Candle)
+				if !ok || c.Symbol != d.symbol {
+					return
+				}
+				d.onCandleUpdate(c)
+			})
+			if err != nil {
+				logger.Error("❌ [暴跌检测] 注册回调失败: %v", err)
+				d.fallbackPolling()
+			} else {
+				logger.Info("✅ [暴跌检测] 已注册K线回调")
+			}
+		} else {
+			d.fallbackPolling()
+		}
 	}
 }
 

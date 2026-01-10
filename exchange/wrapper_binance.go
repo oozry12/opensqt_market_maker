@@ -257,6 +257,10 @@ func (w *binanceWrapper) StartKlineStream(ctx context.Context, symbols []string,
 	})
 }
 
+func (w *binanceWrapper) RegisterKlineCallback(componentName string, callback func(candle interface{})) error {
+	return w.adapter.RegisterKlineCallback(componentName, callback)
+}
+
 func (w *binanceWrapper) StopKlineStream() error {
 	return w.adapter.StopKlineStream()
 }

@@ -957,6 +957,14 @@ func (b *BitgetAdapter) StartKlineStream(ctx context.Context, symbols []string, 
 	return b.klineWSManager.Start(ctx, symbols, interval, callback)
 }
 
+// RegisterKlineCallback 注册K线回调函数（支持多个组件共享K线流）
+func (b *BitgetAdapter) RegisterKlineCallback(componentName string, callback func(candle interface{})) error {
+	if b.klineWSManager == nil {
+		return fmt.Errorf("K线流管理器未初始化")
+	}
+	return b.klineWSManager.RegisterCallback(componentName, callback)
+}
+
 // StopKlineStream 停止K线流
 func (b *BitgetAdapter) StopKlineStream() error {
 	if b.klineWSManager != nil {

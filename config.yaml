@@ -136,11 +136,11 @@ trading:
 
   # 中性合约网格配置（支持做空）
   neutral_grid:
-    enabled: false                  # 是否启用中性网格（默认false）
+    enabled: true                  # 是否启用中性网格（默认false）
     max_short_positions: 10         # 最大空仓数量（默认10）
     short_threshold: 1.002          # 开空仓阈值（默认1.002，价格>MA×1.002）
     short_ma_window: 20             # 开空仓均线周期（默认20）
-    short_close_rate: 0.005         # 空仓平仓利润率（默认0.005即0.5%）
+    short_close_rate: 0.003         # 空仓平仓利润率（默认0.005即0.5%）
     #
     # 判定逻辑：
     # 1. 开空仓：当前价格 > MA20 × 1.002（价格高于均线0.2%）

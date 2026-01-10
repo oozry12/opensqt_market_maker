@@ -67,6 +67,11 @@ type IExchange interface {
 	// symbols: 交易对列表，interval: K线周期（如 "1m"），callback: K线更新回调
 	StartKlineStream(ctx context.Context, symbols []string, interval string, callback CandleUpdateCallback) error
 
+	// RegisterKlineCallback 注册K线回调函数（支持多个组件共享K线流）
+	// componentName: 组件名称（如 "ATRCalculator", "DowntrendDetector"等）
+	// callback: 回调函数，接收 interface{} 类型的 K线数据
+	RegisterKlineCallback(componentName string, callback func(candle interface{})) error
+
 	// StopKlineStream 停止K线流
 	StopKlineStream() error
 

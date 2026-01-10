@@ -5,6 +5,7 @@ import (
 	"math"
 	"opensqt/exchange"
 	"opensqt/logger"
+	"strings"
 	"sync"
 	"time"
 )
@@ -118,7 +119,7 @@ func (a *ATRCalculator) loadHistoricalData() error {
 func (a *ATRCalculator) subscribeKlineStream() {
 	defer a.wg.Done()
 
-	// 使用交易所的K线流
+	// 尝试启动K线流
 	err := a.exchange.StartKlineStream(a.ctx, []string{a.symbol}, a.interval, func(candle *exchange.Candle) {
 		if candle == nil || candle.Symbol != a.symbol {
 			return
@@ -128,8 +129,29 @@ func (a *ATRCalculator) subscribeKlineStream() {
 
 	if err != nil {
 		logger.Error("❌ [ATR] 订阅K线流失败: %v", err)
-		// 降级：使用定时轮询
-		a.fallbackPolling()
+		// 如果K线流已在运行，尝试注册回调
+		if strings.Contains(err.Error(), "K线流已在运行") || strings.Contains(err.Error(), "K线流未启动") {
+			logger.Info("🔄 [ATR] K线流已在运行，尝试注册回调...")
+			err = a.exchange.RegisterKlineCallback("ATRCalculator", func(candle interface{}) {
+				if candle == nil {
+					return
+				}
+				c, ok := candle.(*exchange.Candle)
+				if !ok || c.Symbol != a.symbol {
+					return
+				}
+				a.onCandleUpdate(c)
+			})
+			if err != nil {
+				logger.Error("❌ [ATR] 注册回调失败: %v", err)
+				a.fallbackPolling()
+			} else {
+				logger.Info("✅ [ATR] 已注册K线回调")
+			}
+		} else {
+			// 降级：使用定时轮询
+			a.fallbackPolling()
+		}
 	}
 }
 

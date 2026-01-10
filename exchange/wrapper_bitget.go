@@ -244,6 +244,10 @@ func (w *bitgetWrapper) StartKlineStream(ctx context.Context, symbols []string, 
 	})
 }
 
+func (w *bitgetWrapper) RegisterKlineCallback(componentName string, callback func(candle interface{})) error {
+	return w.adapter.RegisterKlineCallback(componentName, callback)
+}
+
 func (w *bitgetWrapper) StopKlineStream() error {
 	return w.adapter.StopKlineStream()
 }

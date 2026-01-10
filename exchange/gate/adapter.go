@@ -674,6 +674,14 @@ func (g *GateAdapter) StartKlineStream(ctx context.Context, symbols []string, in
 	return g.klineWSManager.Start(ctx, symbols, interval, callback)
 }
 
+// RegisterKlineCallback 注册K线回调函数（支持多个组件共享K线流）
+func (g *GateAdapter) RegisterKlineCallback(componentName string, callback func(interface{})) error {
+	if g.klineWSManager == nil {
+		return fmt.Errorf("K线流管理器未初始化")
+	}
+	return g.klineWSManager.RegisterCallback(componentName, callback)
+}
+
 // StopKlineStream 停止K线流
 func (g *GateAdapter) StopKlineStream() {
 	if g.klineWSManager != nil {
