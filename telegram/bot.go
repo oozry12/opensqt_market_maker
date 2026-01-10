@@ -74,6 +74,13 @@ func (b *Bot) Start() {
 	updates := b.api.GetUpdatesChan(u)
 
 	for update := range updates {
+		// 处理回调查询（按钮点击）
+		if update.CallbackQuery != nil {
+			b.handleCallbackQuery(update.CallbackQuery)
+			continue
+		}
+
+		// 处理消息
 		if update.Message == nil {
 			continue
 		}
@@ -117,6 +124,8 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.setMinOrderValue(chatID, msg.CommandArguments())
 	case "config":
 		b.showConfig(chatID)
+	case "panel":
+		b.showConfigPanel(chatID)
 	default:
 		if msg.Text != "" && msg.Text[0] == '/' {
 			b.sendMessage(chatID, "❓ 未知命令，输入 /help 查看帮助")
@@ -137,6 +146,7 @@ func (b *Bot) sendHelp(chatID int64) {
 /update - 拉取代码更新 (git pull)
 
 *配置管理:*
+/panel - 打开配置面板（推荐）
 /setsymbol <交易对> - 设置交易对 (如 DOGEUSDC)
 /setpriceinterval <价格间隔> - 设置价格间隔 (如 0.0001)
 /setorderquantity <订单金额> - 设置每单金额 (如 12)
@@ -664,4 +674,83 @@ func (b *Bot) showConfig(chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, configInfo)
 	msg.ParseMode = "Markdown"
 	b.api.Send(msg)
+}
+
+func (b *Bot) showConfigPanel(chatID int64) {
+	cfg, err := b.loadConfig()
+	if err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ 读取配置失败: %v", err))
+		return
+	}
+
+	configInfo := fmt.Sprintf(`⚙️ *交易配置面板*
+
+📊 交易对: %s
+📏 价格间隔: %.6f
+💰 订单金额: %.2f USDT
+📉 最小订单价值: %.2f USDT
+
+点击下方按钮修改配置`, cfg.Trading.Symbol, cfg.Trading.PriceInterval, cfg.Trading.OrderQuantity, cfg.Trading.MinOrderValue)
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📊 设置交易对", "config_symbol"),
+			tgbotapi.NewInlineKeyboardButtonData("📏 设置价格间隔", "config_price_interval"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("💰 设置订单金额", "config_order_quantity"),
+			tgbotapi.NewInlineKeyboardButtonData("📉 设置最小价值", "config_min_order_value"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔄 刷新配置", "config_refresh"),
+			tgbotapi.NewInlineKeyboardButtonData("❌ 关闭面板", "config_close"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(chatID, configInfo)
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+	b.api.Send(msg)
+}
+
+func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
+	chatID := query.Message.Chat.ID
+	data := query.Data
+
+	if !b.allowedUsers[query.From.ID] {
+		callback := tgbotapi.NewCallback(query.ID, "⛔ 无权限操作")
+		b.api.Request(callback)
+		return
+	}
+
+	switch data {
+	case "config_symbol":
+		callback := tgbotapi.NewCallback(query.ID, "请输入交易对，例如: DOGEUSDC")
+		b.api.Request(callback)
+		b.sendMessage(chatID, "请输入交易对，例如: DOGEUSDC\n使用 /setsymbol <交易对> 命令")
+	case "config_price_interval":
+		callback := tgbotapi.NewCallback(query.ID, "请输入价格间隔，例如: 0.0001")
+		b.api.Request(callback)
+		b.sendMessage(chatID, "请输入价格间隔，例如: 0.0001\n使用 /setpriceinterval <价格间隔> 命令")
+	case "config_order_quantity":
+		callback := tgbotapi.NewCallback(query.ID, "请输入订单金额，例如: 12")
+		b.api.Request(callback)
+		b.sendMessage(chatID, "请输入订单金额，例如: 12\n使用 /setorderquantity <订单金额> 命令")
+	case "config_min_order_value":
+		callback := tgbotapi.NewCallback(query.ID, "请输入最小订单价值，例如: 10")
+		b.api.Request(callback)
+		b.sendMessage(chatID, "请输入最小订单价值，例如: 10\n使用 /setminordervalue <最小价值> 命令")
+	case "config_refresh":
+		callback := tgbotapi.NewCallback(query.ID, "正在刷新配置...")
+		b.api.Request(callback)
+		b.showConfigPanel(chatID)
+	case "config_close":
+		callback := tgbotapi.NewCallback(query.ID, "已关闭配置面板")
+		b.api.Request(callback)
+		deleteMsg := tgbotapi.NewDeleteMessage(chatID, query.Message.MessageID)
+		b.api.Request(deleteMsg)
+	default:
+		callback := tgbotapi.NewCallback(query.ID, "未知操作")
+		b.api.Request(callback)
+	}
 }
