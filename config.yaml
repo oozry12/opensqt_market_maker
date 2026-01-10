@@ -83,7 +83,7 @@ trading:
 #####################################
 
   # 滑动窗口配置
-  buy_window_size: 30          # 下方买单数量
+  buy_window_size: 40          # 下方买单数量
   sell_window_size: 30         # 上方卖单数量
 
   # 对账配置
@@ -217,8 +217,8 @@ risk_control:
   interval: "1m"
   volume_multiplier: 2.5
   average_window: 20
-  trigger_threshold: 1      
-  recovery_threshold: 4
+  trigger_threshold: 2      
+  recovery_threshold: 3
 
   # 触发条件：当前价格 < 移动均价 且 成交量 > 均值×倍数
   # 解除条件：至少 recovery_threshold 个币种满足（当前价格 > 移动均价 且 成交量 < 均值×倍数）
