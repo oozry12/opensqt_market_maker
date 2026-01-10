@@ -60,7 +60,7 @@ exchanges:
 trading:
   symbol: "DOGEUSDC"
   price_interval: 0.00001         # 价格间隔（1美元）
-  order_quantity: 24        # 每单购买金额（USDT/USDC）如 30 表示每单投入30U
+  order_quantity: 21        # 每单购买金额（USDT/USDC）如 30 表示每单投入30U
   min_order_value: 6      # 最小订单价值（USDT），小于此值不挂单（默认20U）
   # 注意：price_decimals 和 quantity_decimals 已移除，现在从交易所自动获取
   
@@ -99,7 +99,7 @@ trading:
 
   # 动态网格配置（根据波动率自动调整网格密度）
   dynamic_grid:
-    enabled: true                  # 是否启用动态网格（默认关闭，使用固定间距）
+    enabled: false                  # 是否启用动态网格（默认关闭，使用固定间距）
     atr_period: 14                  # ATR计算周期（默认14根K线）
     atr_interval: "5m"              # ATR使用的K线周期（1m/5m/15m，默认5m）
     atr_multiplier: 0.6             # ATR乘数（默认0.6，值越大网格越宽）
@@ -118,7 +118,7 @@ trading:
   # 阴跌检测配置（均线压制 + 连续收阴）
   # 用于识别"钝刀子割肉"的缓慢下跌行情，防止在阴跌中把子弹打光
   downtrend_detection:
-    enabled: true                  # 是否启用阴跌检测（默认关闭）
+    enabled: false                  # 是否启用阴跌检测（默认关闭）
     ma_window: 20                   # 均线周期（默认20）
     mild_threshold: 0.99            # 轻度下跌阈值（价格 < MA × 0.99，即低于均线1%）
     severe_threshold: 0.97         # 严重下跌阈值（价格 < MA × 0.96，即低于均线3%）
@@ -153,7 +153,7 @@ trading:
 
   # 暴跌检测配置（单边上涨趋势中的暴跌）
   crash_detection:
-    enabled: true                   # 是否启用暴跌检测（默认false）
+    enabled: false                   # 是否启用暴跌检测（默认false）
     ma_window: 20                   # 短期均线周期（默认20）
     long_ma_window: 60              # 长期均线周期（默认60）
     min_uptrend_candles: 5          # 最小连续上涨K线数（默认5）
