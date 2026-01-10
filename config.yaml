@@ -83,15 +83,15 @@ trading:
 #####################################
 
   # 滑动窗口配置
-  buy_window_size: 24          # 下方买单数量
-  sell_window_size: 24         # 上方卖单数量
+  buy_window_size: 40          # 下方买单数量
+  sell_window_size: 40         # 上方卖单数量
 
   # 对账配置
   reconcile_interval: 60      # 对账间隔（秒）
 
   # 订单管理配置
-  order_cleanup_threshold: 60      # 订单清理上限（超过此数量时触发清理）
-  cleanup_batch_size: 20           # 清理批次大小（每次清理的买单和卖单数量）
+  order_cleanup_threshold: 90      # 订单清理上限（超过此数量时触发清理）
+  cleanup_batch_size: 45           # 清理批次大小（每次清理的买单和卖单数量）
   margin_lock_duration_seconds: 20  # 保证金不足时锁定时间（秒，默认10秒）
   
   # 持仓安全性配置
