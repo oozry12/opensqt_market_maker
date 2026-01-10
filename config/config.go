@@ -34,6 +34,15 @@ type Config struct {
 		MinMarginBalance      float64 `yaml:"min_margin_balance"`           // 最小保证金余额（USDT），低于此值停止下买单，默认5U
 		// 注意：price_decimals 和 quantity_decimals 已废弃，现在从交易所自动获取
 
+		// 中性合约网格配置
+		NeutralGrid struct {
+			Enabled           bool    `yaml:"enabled"`            // 是否启用中性网格（默认false）
+			MaxShortPositions int     `yaml:"max_short_positions"` // 最大空仓数量（默认10）
+			ShortThreshold    float64 `yaml:"short_threshold"`    // 开空仓阈值（默认1.002，价格>MA×1.002）
+			ShortMAWindow      int     `yaml:"short_ma_window"`     // 开空仓均线周期（默认20）
+			ShortCloseRate     float64 `yaml:"short_close_rate"`    // 空仓平仓利润率（默认0.005即0.5%）
+		} `yaml:"neutral_grid"`
+
 		// 动态网格配置
 		DynamicGrid struct {
 			Enabled       bool    `yaml:"enabled"`         // 是否启用动态网格（默认false）
@@ -55,6 +64,16 @@ type Config struct {
 			SevereWindowRatio    float64 `yaml:"severe_window_ratio"`    // 严重阴跌买单窗口比例（默认0.3）
 			KlineInterval        string  `yaml:"kline_interval"`         // K线周期（默认"5m"）
 		} `yaml:"downtrend_detection"`
+
+		CrashDetection struct {
+			Enabled         bool    `yaml:"enabled"`          // 是否启用暴跌检测（默认false）
+			MAWindow        int     `yaml:"ma_window"`        // 短期均线周期（默认20）
+			LongMAWindow    int     `yaml:"long_ma_window"`   // 长期均线周期（默认60）
+			MinUptrendCandles int   `yaml:"min_uptrend_candles"` // 最小连续上涨K线数（默认5）
+			MildCrashRate   float64 `yaml:"mild_crash_rate"`  // 轻度暴跌幅度（默认0.05即5%）
+			SevereCrashRate float64 `yaml:"severe_crash_rate"` // 严重暴跌幅度（默认0.10即10%）
+			KlineInterval   string  `yaml:"kline_interval"`   // K线周期（默认"1h"）
+		} `yaml:"crash_detection"`
 	} `yaml:"trading"`
 
 	System struct {
@@ -244,6 +263,20 @@ func (c *Config) Validate() error {
 	}
 	if c.Trading.MinMarginBalance <= 0 {
 		c.Trading.MinMarginBalance = 5.0 // 默认5U，低于此值停止下买单
+	}
+
+	// 中性网格配置默认值
+	if c.Trading.NeutralGrid.MaxShortPositions <= 0 {
+		c.Trading.NeutralGrid.MaxShortPositions = 10 // 默认最大10个空仓
+	}
+	if c.Trading.NeutralGrid.ShortThreshold <= 0 {
+		c.Trading.NeutralGrid.ShortThreshold = 1.002 // 默认价格高于均线0.2%时开空
+	}
+	if c.Trading.NeutralGrid.ShortMAWindow <= 0 {
+		c.Trading.NeutralGrid.ShortMAWindow = 20 // 默认20周期均线
+	}
+	if c.Trading.NeutralGrid.ShortCloseRate <= 0 {
+		c.Trading.NeutralGrid.ShortCloseRate = 0.005 // 默认0.5%利润率平仓
 	}
 
 	// 动态网格配置默认值

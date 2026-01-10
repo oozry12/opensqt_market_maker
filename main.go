@@ -172,6 +172,18 @@ func main() {
 			cfg.Trading.DowntrendDetection.ConsecutiveDownCount)
 	}
 
+	// === 新增：初始化暴跌检测器（如果启用）===
+	var crashDetector *monitor.CrashDetector
+	if cfg.Trading.CrashDetection.Enabled {
+		logger.Info("🚨 暴跌检测已启用，正在初始化...")
+		crashDetector = monitor.NewCrashDetector(cfg, ex, cfg.Trading.Symbol)
+		superPositionManager.SetCrashDetector(crashDetector)
+		logger.Info("✅ 暴跌检测器已创建 (MA周期: %d/%d, 最小上涨K线数: %d)",
+			cfg.Trading.CrashDetection.MAWindow,
+			cfg.Trading.CrashDetection.LongMAWindow,
+			cfg.Trading.CrashDetection.MinUptrendCandles)
+	}
+
 	// === 新增：初始化风控监视器 ===
 	riskMonitor := safety.NewRiskMonitor(cfg, ex)
 
@@ -288,6 +300,13 @@ func main() {
 	if downtrendDetector != nil {
 		if err := downtrendDetector.Start(ctx); err != nil {
 			logger.Warn("⚠️ 阴跌检测器启动失败: %v", err)
+		}
+	}
+
+	// 启动暴跌检测器（如果启用）
+	if crashDetector != nil {
+		if err := crashDetector.Start(ctx); err != nil {
+			logger.Warn("⚠️ 暴跌检测器启动失败: %v", err)
 		}
 	}
 
