@@ -59,7 +59,7 @@ exchanges:
 
 trading:
   symbol: "DOGEUSDC"
-  price_interval: 0.0001         # 价格间隔（1美元）
+  price_interval: 0.00005         # 价格间隔（1美元）
   order_quantity: 30        # 每单购买金额（USDT/USDC）如 30 表示每单投入30U
   min_order_value: 15      # 最小订单价值（USDT），小于此值不挂单（默认20U）
   # 注意：price_decimals 和 quantity_decimals 已移除，现在从交易所自动获取
@@ -102,8 +102,8 @@ trading:
     enabled: true                  # 是否启用动态网格（默认关闭，使用固定间距）
     atr_period: 14                  # ATR计算周期（默认14根K线）
     atr_interval: "5m"              # ATR使用的K线周期（1m/5m/15m，默认5m）
-    atr_multiplier: 0.8             # ATR乘数（默认0.8，值越大网格越宽）
-    min_profit_rate: 0.002          # 最小利润率（默认0.1%，确保每单有利润）
+    atr_multiplier: 0.9             # ATR乘数（默认0.9，值越大网格越宽）
+    min_profit_rate: 0.001          # 最小利润率（默认0.1%，确保每单有利润）
     # 
     # 动态网格计算逻辑：
     # 实际间距 = max(基础间距, 保本间距, ATR间距)
