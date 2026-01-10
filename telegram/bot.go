@@ -31,6 +31,7 @@ type Bot struct {
 	logBuffer     []string       // 最近日志缓存
 	logMu         sync.RWMutex   // 日志锁
 	notifyChat    int64          // 通知聊天ID
+	manualPID     int            // 手动启动的进程ID
 }
 
 // NewBot 创建 Telegram Bot
@@ -72,6 +73,14 @@ func (b *Bot) Start() {
 	u.Timeout = 60
 
 	updates := b.api.GetUpdatesChan(u)
+
+	// 启动后主动发送功能面板给所有授权用户
+	go func() {
+		time.Sleep(2 * time.Second)
+		for userID := range b.allowedUsers {
+			b.sendWelcomePanel(userID)
+		}
+	}()
 
 	for update := range updates {
 		// 处理回调查询（按钮点击）
@@ -161,6 +170,36 @@ func (b *Bot) sendHelp(chatID int64) {
 	b.api.Send(msg)
 }
 
+// sendWelcomePanel 发送欢迎面板
+func (b *Bot) sendWelcomePanel(chatID int64) {
+	welcome := `🤖 *OpenSQT 交易控制 Bot 已上线*
+
+欢迎使用交易控制面板！点击下方按钮快速操作`
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📊 查看状态", "status"),
+			tgbotapi.NewInlineKeyboardButtonData("⚙️ 配置面板", "config_panel"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🚀 启动交易", "start_trading"),
+			tgbotapi.NewInlineKeyboardButtonData("🛑 停止交易", "stop_trading"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📝 查看日志", "logs"),
+			tgbotapi.NewInlineKeyboardButtonData("🔄 更新代码", "update_code"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("❓ 帮助", "help"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(chatID, welcome)
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = keyboard
+	b.api.Send(msg)
+}
+
 // startTrading 启动交易程序
 func (b *Bot) startTrading(chatID int64) {
 	b.tradingMu.Lock()
@@ -168,6 +207,13 @@ func (b *Bot) startTrading(chatID int64) {
 
 	if b.isRunning {
 		b.sendMessage(chatID, "⚠️ 交易程序已在运行中")
+		return
+	}
+
+	// 检查是否有手动启动的进程
+	isRunning, pid := b.checkTradingProcess()
+	if isRunning {
+		b.sendMessage(chatID, fmt.Sprintf("⚠️ 交易程序已在运行中 (手动启动, PID: %d)\n请先使用 /stop 停止现有进程", pid))
 		return
 	}
 
@@ -250,35 +296,57 @@ func (b *Bot) stopTrading(chatID int64) {
 	b.tradingMu.Lock()
 	defer b.tradingMu.Unlock()
 
-	if !b.isRunning || b.tradingCmd == nil {
-		b.sendMessage(chatID, "⚠️ 交易程序未运行")
+	if b.isRunning && b.tradingCmd != nil {
+		b.sendMessage(chatID, "🛑 正在停止交易程序...")
+
+		// 发送中断信号（优雅关闭）
+		if err := b.tradingCmd.Process.Signal(os.Interrupt); err != nil {
+			// 如果发送信号失败，直接 Kill
+			b.tradingCmd.Process.Kill()
+		}
+
+		// 等待进程退出（最多15秒）
+		done := make(chan error, 1)
+		go func() {
+			done <- b.tradingCmd.Wait()
+		}()
+
+		select {
+		case <-done:
+			b.sendMessage(chatID, "✅ 交易程序已停止")
+		case <-time.After(15 * time.Second):
+			b.tradingCmd.Process.Kill()
+			b.sendMessage(chatID, "⚠️ 强制终止交易程序")
+		}
+
+		b.isRunning = false
+		b.tradingCmd = nil
 		return
 	}
 
-	b.sendMessage(chatID, "🛑 正在停止交易程序...")
+	// 检查是否有手动启动的进程
+	isRunning, pid := b.checkTradingProcess()
+	if isRunning {
+		b.sendMessage(chatID, fmt.Sprintf("🛑 正在停止手动启动的交易程序 (PID: %d)...", pid))
 
-	// 发送中断信号（优雅关闭）
-	if err := b.tradingCmd.Process.Signal(os.Interrupt); err != nil {
-		// 如果发送信号失败，直接 Kill
-		b.tradingCmd.Process.Kill()
-	}
+		var cmd *exec.Cmd
+		if runtime.GOOS == "windows" {
+			cmd = exec.Command("taskkill", "/F", "/PID", strconv.Itoa(pid))
+		} else {
+			cmd = exec.Command("kill", "-9", strconv.Itoa(pid))
+		}
 
-	// 等待进程退出（最多15秒）
-	done := make(chan error, 1)
-	go func() {
-		done <- b.tradingCmd.Wait()
-	}()
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			b.sendMessage(chatID, fmt.Sprintf("⚠️ 停止进程失败: %v\n输出: %s", err, string(output)))
+			return
+		}
 
-	select {
-	case <-done:
 		b.sendMessage(chatID, "✅ 交易程序已停止")
-	case <-time.After(15 * time.Second):
-		b.tradingCmd.Process.Kill()
-		b.sendMessage(chatID, "⚠️ 强制终止交易程序")
+		return
 	}
 
-	b.isRunning = false
-	b.tradingCmd = nil
+	b.sendMessage(chatID, "⚠️ 交易程序未运行")
 }
 
 // restartTrading 重启交易程序
@@ -295,6 +363,18 @@ func (b *Bot) restartTrading(chatID int64) {
 		}
 		b.isRunning = false
 		b.tradingCmd = nil
+	} else {
+		// 检查是否有手动启动的进程
+		isRunning, pid := b.checkTradingProcess()
+		if isRunning {
+			var cmd *exec.Cmd
+			if runtime.GOOS == "windows" {
+				cmd = exec.Command("taskkill", "/F", "/PID", strconv.Itoa(pid))
+			} else {
+				cmd = exec.Command("kill", "-9", strconv.Itoa(pid))
+			}
+			cmd.Run()
+		}
 	}
 	b.tradingMu.Unlock()
 
@@ -316,7 +396,7 @@ func (b *Bot) sendStatus(chatID int64) {
 		if b.tradingCmd != nil && b.tradingCmd.Process != nil {
 			pid = b.tradingCmd.Process.Pid
 		}
-		status = fmt.Sprintf(`✅ *交易程序运行中*
+		status = fmt.Sprintf(`✅ *交易程序运行中* (Bot 启动)
 
 ⏱ 运行时间: %v
 🔢 进程PID: %d
@@ -324,10 +404,22 @@ func (b *Bot) sendStatus(chatID int64) {
 ⚙️ 配置文件: %s
 🚀 启动命令: go run main.go`, uptime, pid, b.workDir, b.configPath)
 	} else {
-		status = fmt.Sprintf(`❌ *交易程序未运行*
+		isRunning, pid := b.checkTradingProcess()
+		if isRunning {
+			status = fmt.Sprintf(`✅ *交易程序运行中* (手动启动)
+
+🔢 进程PID: %d
+📁 工作目录: %s
+⚙️ 配置文件: %s
+🚀 启动方式: 手动启动
+
+⚠️ 注意: Bot 无法控制手动启动的进程，请手动停止`, pid, b.workDir, b.configPath)
+		} else {
+			status = fmt.Sprintf(`❌ *交易程序未运行*
 
 📁 工作目录: %s
 ⚙️ 配置文件: %s`, b.workDir, b.configPath)
+		}
 	}
 
 	msg := tgbotapi.NewMessage(chatID, status)
@@ -459,6 +551,58 @@ func (b *Bot) GetBotUsername() string {
 // Stop 停止 Bot
 func (b *Bot) Stop() {
 	b.api.StopReceivingUpdates()
+}
+
+// checkTradingProcess 检查交易程序进程是否正在运行
+// 返回：是否运行，进程ID
+func (b *Bot) checkTradingProcess() (bool, int) {
+	var cmd *exec.Cmd
+	var processName string
+
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("tasklist", "/FI", "IMAGENAME eq "+b.exeName, "/FO", "CSV")
+		processName = b.exeName
+	} else {
+		cmd = exec.Command("pgrep", "-f", "opensqt")
+		processName = "opensqt"
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, 0
+	}
+
+	outputStr := string(output)
+
+	if runtime.GOOS == "windows" {
+		if strings.Contains(outputStr, processName) && !strings.Contains(outputStr, "No tasks are running") {
+			lines := strings.Split(outputStr, "\n")
+			for _, line := range lines {
+				if strings.Contains(line, processName) {
+					fields := strings.Split(line, ",")
+					if len(fields) >= 2 {
+						pidStr := strings.Trim(fields[1], "\"")
+						pid, err := strconv.Atoi(pidStr)
+						if err == nil && pid > 0 {
+							return true, pid
+						}
+					}
+				}
+			}
+		}
+	} else {
+		if len(strings.TrimSpace(outputStr)) > 0 {
+			pids := strings.Fields(outputStr)
+			if len(pids) > 0 {
+				pid, err := strconv.Atoi(pids[0])
+				if err == nil && pid > 0 {
+					return true, pid
+				}
+			}
+		}
+	}
+
+	return false, 0
 }
 
 // gitPullAndRebuild 拉取更新
@@ -724,6 +868,34 @@ func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 	}
 
 	switch data {
+	case "status":
+		callback := tgbotapi.NewCallback(query.ID, "正在获取状态...")
+		b.api.Request(callback)
+		b.sendStatus(chatID)
+	case "config_panel":
+		callback := tgbotapi.NewCallback(query.ID, "正在打开配置面板...")
+		b.api.Request(callback)
+		b.showConfigPanel(chatID)
+	case "start_trading":
+		callback := tgbotapi.NewCallback(query.ID, "正在启动交易...")
+		b.api.Request(callback)
+		b.startTrading(chatID)
+	case "stop_trading":
+		callback := tgbotapi.NewCallback(query.ID, "正在停止交易...")
+		b.api.Request(callback)
+		b.stopTrading(chatID)
+	case "logs":
+		callback := tgbotapi.NewCallback(query.ID, "正在获取日志...")
+		b.api.Request(callback)
+		b.sendLogs(chatID)
+	case "update_code":
+		callback := tgbotapi.NewCallback(query.ID, "正在更新代码...")
+		b.api.Request(callback)
+		b.gitPullAndRebuild(chatID)
+	case "help":
+		callback := tgbotapi.NewCallback(query.ID, "正在显示帮助...")
+		b.api.Request(callback)
+		b.sendHelp(chatID)
 	case "config_symbol":
 		callback := tgbotapi.NewCallback(query.ID, "请输入交易对，例如: DOGEUSDC")
 		b.api.Request(callback)
