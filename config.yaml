@@ -59,9 +59,9 @@ exchanges:
 
 trading:
   symbol: "DOGEUSDC"
-  price_interval: 0.0002         # 价格间隔（1美元）
-  order_quantity: 21        # 每单购买金额（USDT/USDC）如 30 表示每单投入30U
-  min_order_value: 12      # 最小订单价值（USDT），小于此值不挂单（默认20U）
+  price_interval: 0.0001         # 价格间隔（1美元）
+  order_quantity: 30        # 每单购买金额（USDT/USDC）如 30 表示每单投入30U
+  min_order_value: 15      # 最小订单价值（USDT），小于此值不挂单（默认20U）
   # 注意：price_decimals 和 quantity_decimals 已移除，现在从交易所自动获取
   
   #ETH配置建议(每单赚1美分):
@@ -83,8 +83,8 @@ trading:
 #####################################
 
   # 滑动窗口配置
-  buy_window_size: 6          # 下方买单数量
-  sell_window_size: 6         # 上方卖单数量
+  buy_window_size: 10          # 下方买单数量
+  sell_window_size: 10         # 上方卖单数量
 
   # 对账配置
   reconcile_interval: 60      # 对账间隔（秒）
