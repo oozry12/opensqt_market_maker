@@ -138,7 +138,7 @@ trading:
   neutral_grid:
     enabled: true                  # 是否启用中性网格（默认false）
     max_short_positions: 10         # 最大空仓数量（默认10）
-    short_threshold: 1.002          # 开空仓阈值（默认1.002，价格>MA×1.002）
+    short_threshold: 1.006          # 开空仓阈值（默认1.002，价格>MA×1.002）
     short_ma_window: 20             # 开空仓均线周期（默认20）
     short_close_rate: 0.003         # 空仓平仓利润率（默认0.005即0.5%）
     #

@@ -632,12 +632,34 @@ func (b *Bot) gitPullAndRebuild(chatID int64) {
 
 	b.sendMessage(chatID, fmt.Sprintf("✅ Git pull 完成:\n```\n%s\n```", string(pullOutput)))
 
-	// 如果之前在运行，重新启动
-	if wasRunning {
-		b.sendMessage(chatID, "🔄 重新启动交易程序...")
-		time.Sleep(1 * time.Second)
-		b.startTrading(chatID)
+	b.sendMessage(chatID, "🔄 正在重启 Telegram Bot...")
+
+	// 延迟一下，确保消息发送完成
+	time.Sleep(2 * time.Second)
+
+	// 重启 Telegram Bot
+	var restartCmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		restartCmd = exec.Command("powershell", "-Command", "Start-Process", "-FilePath", "go", "-ArgumentList", "run", "./cmd/telegram_bot/main.go", "-NoNewWindow")
+		restartCmd.Dir = b.workDir
+	} else {
+		restartCmd = exec.Command("nohup", "go", "run", "./cmd/telegram_bot/main.go", "&")
+		restartCmd.Dir = b.workDir
 	}
+
+	if err := restartCmd.Start(); err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("⚠️ 重启 Bot 失败: %v", err))
+		return
+	}
+
+	b.sendMessage(chatID, "✅ Telegram Bot 已重启")
+
+	// 延迟一下，确保消息发送完成
+	time.Sleep(1 * time.Second)
+
+	// 退出当前 Bot 进程
+	b.Stop()
+	os.Exit(0)
 }
 
 type ConfigData struct {
