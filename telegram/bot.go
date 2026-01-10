@@ -8,10 +8,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"gopkg.in/yaml.v3"
 )
 
 // Bot Telegram 机器人控制器
@@ -104,6 +107,16 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.sendLogs(chatID)
 	case "update":
 		b.gitPullAndRebuild(chatID)
+	case "setsymbol":
+		b.setSymbol(chatID, msg.CommandArguments())
+	case "setpriceinterval":
+		b.setPriceInterval(chatID, msg.CommandArguments())
+	case "setorderquantity":
+		b.setOrderQuantity(chatID, msg.CommandArguments())
+	case "setminordervalue":
+		b.setMinOrderValue(chatID, msg.CommandArguments())
+	case "config":
+		b.showConfig(chatID)
 	default:
 		if msg.Text != "" && msg.Text[0] == '/' {
 			b.sendMessage(chatID, "❓ 未知命令，输入 /help 查看帮助")
@@ -115,13 +128,22 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 func (b *Bot) sendHelp(chatID int64) {
 	help := `🤖 *OpenSQT 交易控制*
 
-*可用命令:*
+*交易控制:*
 /run - 启动交易程序 (go run main.go)
 /stop - 停止交易程序
 /restart - 重启交易程序
 /status - 查看运行状态
 /logs - 查看最近日志
 /update - 拉取代码更新 (git pull)
+
+*配置管理:*
+/setsymbol <交易对> - 设置交易对 (如 DOGEUSDC)
+/setpriceinterval <价格间隔> - 设置价格间隔 (如 0.0001)
+/setorderquantity <订单金额> - 设置每单金额 (如 12)
+/setminordervalue <最小价值> - 设置最小订单价值 (如 10)
+/config - 查看当前配置
+
+*帮助:*
 /help - 显示帮助`
 
 	msg := tgbotapi.NewMessage(chatID, help)
@@ -137,6 +159,18 @@ func (b *Bot) startTrading(chatID int64) {
 	if b.isRunning {
 		b.sendMessage(chatID, "⚠️ 交易程序已在运行中")
 		return
+	}
+
+	b.sendMessage(chatID, "📥 正在拉取最新代码...")
+
+	pullCmd := exec.Command("git", "pull")
+	pullCmd.Dir = b.workDir
+	pullOutput, err := pullCmd.CombinedOutput()
+	
+	if err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("⚠️ Git pull 失败，继续启动:\n```\n%s\n```", string(pullOutput)))
+	} else {
+		b.sendMessage(chatID, fmt.Sprintf("✅ Git pull 完成:\n```\n%s\n```", string(pullOutput)))
 	}
 
 	b.sendMessage(chatID, "🚀 正在启动交易程序...")
@@ -450,4 +484,184 @@ func (b *Bot) gitPullAndRebuild(chatID int64) {
 		time.Sleep(1 * time.Second)
 		b.startTrading(chatID)
 	}
+}
+
+type ConfigData struct {
+	Trading struct {
+		Symbol        string  `yaml:"symbol"`
+		PriceInterval float64 `yaml:"price_interval"`
+		OrderQuantity float64 `yaml:"order_quantity"`
+		MinOrderValue float64 `yaml:"min_order_value"`
+	} `yaml:"trading"`
+}
+
+func (b *Bot) loadConfig() (*ConfigData, error) {
+	configPath := b.configPath
+	if !filepath.IsAbs(configPath) {
+		configPath = filepath.Join(b.workDir, configPath)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取配置文件失败: %v", err)
+	}
+
+	var cfg ConfigData
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("解析配置文件失败: %v", err)
+	}
+
+	return &cfg, nil
+}
+
+func (b *Bot) saveConfig(cfg *ConfigData) error {
+	configPath := b.configPath
+	if !filepath.IsAbs(configPath) {
+		configPath = filepath.Join(b.workDir, configPath)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("读取配置文件失败: %v", err)
+	}
+
+	var fullConfig map[string]interface{}
+	if err := yaml.Unmarshal(data, &fullConfig); err != nil {
+		return fmt.Errorf("解析配置文件失败: %v", err)
+	}
+
+	if trading, ok := fullConfig["trading"].(map[string]interface{}); ok {
+		trading["symbol"] = cfg.Trading.Symbol
+		trading["price_interval"] = cfg.Trading.PriceInterval
+		trading["order_quantity"] = cfg.Trading.OrderQuantity
+		trading["min_order_value"] = cfg.Trading.MinOrderValue
+	}
+
+	newData, err := yaml.Marshal(fullConfig)
+	if err != nil {
+		return fmt.Errorf("序列化配置失败: %v", err)
+	}
+
+	if err := os.WriteFile(configPath, newData, 0644); err != nil {
+		return fmt.Errorf("写入配置文件失败: %v", err)
+	}
+
+	return nil
+}
+
+func (b *Bot) setSymbol(chatID int64, args string) {
+	symbol := strings.TrimSpace(args)
+	if symbol == "" {
+		b.sendMessage(chatID, "❓ 用法: /setsymbol <交易对>\n示例: /setsymbol DOGEUSDC")
+		return
+	}
+
+	cfg, err := b.loadConfig()
+	if err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ 读取配置失败: %v", err))
+		return
+	}
+
+	oldSymbol := cfg.Trading.Symbol
+	cfg.Trading.Symbol = symbol
+
+	if err := b.saveConfig(cfg); err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ 保存配置失败: %v", err))
+		return
+	}
+
+	b.sendMessage(chatID, fmt.Sprintf("✅ 交易对已更新\n旧值: %s\n新值: %s", oldSymbol, symbol))
+}
+
+func (b *Bot) setPriceInterval(chatID int64, args string) {
+	value, err := strconv.ParseFloat(strings.TrimSpace(args), 64)
+	if err != nil || value <= 0 {
+		b.sendMessage(chatID, "❓ 用法: /setpriceinterval <价格间隔>\n示例: /setpriceinterval 0.0001")
+		return
+	}
+
+	cfg, err := b.loadConfig()
+	if err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ 读取配置失败: %v", err))
+		return
+	}
+
+	oldValue := cfg.Trading.PriceInterval
+	cfg.Trading.PriceInterval = value
+
+	if err := b.saveConfig(cfg); err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ 保存配置失败: %v", err))
+		return
+	}
+
+	b.sendMessage(chatID, fmt.Sprintf("✅ 价格间隔已更新\n旧值: %.6f\n新值: %.6f", oldValue, value))
+}
+
+func (b *Bot) setOrderQuantity(chatID int64, args string) {
+	value, err := strconv.ParseFloat(strings.TrimSpace(args), 64)
+	if err != nil || value <= 0 {
+		b.sendMessage(chatID, "❓ 用法: /setorderquantity <订单金额>\n示例: /setorderquantity 12")
+		return
+	}
+
+	cfg, err := b.loadConfig()
+	if err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ 读取配置失败: %v", err))
+		return
+	}
+
+	oldValue := cfg.Trading.OrderQuantity
+	cfg.Trading.OrderQuantity = value
+
+	if err := b.saveConfig(cfg); err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ 保存配置失败: %v", err))
+		return
+	}
+
+	b.sendMessage(chatID, fmt.Sprintf("✅ 订单金额已更新\n旧值: %.2f USDT\n新值: %.2f USDT", oldValue, value))
+}
+
+func (b *Bot) setMinOrderValue(chatID int64, args string) {
+	value, err := strconv.ParseFloat(strings.TrimSpace(args), 64)
+	if err != nil || value <= 0 {
+		b.sendMessage(chatID, "❓ 用法: /setminordervalue <最小价值>\n示例: /setminordervalue 10")
+		return
+	}
+
+	cfg, err := b.loadConfig()
+	if err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ 读取配置失败: %v", err))
+		return
+	}
+
+	oldValue := cfg.Trading.MinOrderValue
+	cfg.Trading.MinOrderValue = value
+
+	if err := b.saveConfig(cfg); err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ 保存配置失败: %v", err))
+		return
+	}
+
+	b.sendMessage(chatID, fmt.Sprintf("✅ 最小订单价值已更新\n旧值: %.2f USDT\n新值: %.2f USDT", oldValue, value))
+}
+
+func (b *Bot) showConfig(chatID int64) {
+	cfg, err := b.loadConfig()
+	if err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ 读取配置失败: %v", err))
+		return
+	}
+
+	configInfo := fmt.Sprintf(`⚙️ *当前交易配置*
+
+📊 交易对: %s
+📏 价格间隔: %.6f
+💰 订单金额: %.2f USDT
+📉 最小订单价值: %.2f USDT
+
+💡 提示: 修改配置后需要重启交易程序才能生效`, cfg.Trading.Symbol, cfg.Trading.PriceInterval, cfg.Trading.OrderQuantity, cfg.Trading.MinOrderValue)
+
+	msg := tgbotapi.NewMessage(chatID, configInfo)
+	msg.ParseMode = "Markdown"
+	b.api.Send(msg)
 }

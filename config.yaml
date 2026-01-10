@@ -59,9 +59,9 @@ exchanges:
 
 trading:
   symbol: "DOGEUSDC"
-  price_interval: 0.0001         # 价格间隔（1美元）
-  order_quantity: 12        # 每单购买金额（USDT/USDC）如 30 表示每单投入30U
-  min_order_value: 10      # 最小订单价值（USDT），小于此值不挂单（默认20U）
+  price_interval: 0.0002         # 价格间隔（1美元）
+  order_quantity: 21        # 每单购买金额（USDT/USDC）如 30 表示每单投入30U
+  min_order_value: 12      # 最小订单价值（USDT），小于此值不挂单（默认20U）
   # 注意：price_decimals 和 quantity_decimals 已移除，现在从交易所自动获取
   
   #ETH配置建议(每单赚1美分):
@@ -83,15 +83,15 @@ trading:
 #####################################
 
   # 滑动窗口配置
-  buy_window_size: 8          # 下方买单数量
+  buy_window_size: 6          # 下方买单数量
   sell_window_size: 6         # 上方卖单数量
 
   # 对账配置
   reconcile_interval: 60      # 对账间隔（秒）
 
   # 订单管理配置
-  order_cleanup_threshold: 50      # 订单清理上限（超过此数量时触发清理）
-  cleanup_batch_size: 20           # 清理批次大小（每次清理的买单和卖单数量）
+  order_cleanup_threshold: 20      # 订单清理上限（超过此数量时触发清理）
+  cleanup_batch_size: 10           # 清理批次大小（每次清理的买单和卖单数量）
   margin_lock_duration_seconds: 20  # 保证金不足时锁定时间（秒，默认10秒）
   
   # 持仓安全性配置
@@ -102,8 +102,8 @@ trading:
     enabled: true                  # 是否启用动态网格（默认关闭，使用固定间距）
     atr_period: 14                  # ATR计算周期（默认14根K线）
     atr_interval: "5m"              # ATR使用的K线周期（1m/5m/15m，默认5m）
-    atr_multiplier: 0.6             # ATR乘数（默认0.8，值越大网格越宽）
-    min_profit_rate: 0.001          # 最小利润率（默认0.1%，确保每单有利润）
+    atr_multiplier: 0.8             # ATR乘数（默认0.8，值越大网格越宽）
+    min_profit_rate: 0.002          # 最小利润率（默认0.1%，确保每单有利润）
     # 
     # 动态网格计算逻辑：
     # 实际间距 = max(基础间距, 保本间距, ATR间距)
@@ -120,12 +120,12 @@ trading:
   downtrend_detection:
     enabled: true                  # 是否启用阴跌检测（默认关闭）
     ma_window: 20                   # 均线周期（默认20）
-    mild_threshold: 0.98            # 轻度下跌阈值（价格 < MA × 0.98，即低于均线2%）
-    severe_threshold: 0.96         # 严重下跌阈值（价格 < MA × 0.96，即低于均线4%）
-    consecutive_down_count: 4       # 连续收阴K线数（默认6根）
-    mild_multiplier: 0.7            # 轻度下跌时买入数量乘数（打7折）
-    severe_multiplier: 0.5          # 严重阴跌时买入数量乘数（打5折）
-    severe_window_ratio: 0.3        # 严重阴跌时买单窗口比例（只挂30%的买单）
+    mild_threshold: 0.99            # 轻度下跌阈值（价格 < MA × 0.99，即低于均线1%）
+    severe_threshold: 0.97         # 严重下跌阈值（价格 < MA × 0.96，即低于均线3%）
+    consecutive_down_count: 3       # 连续收阴K线数（默认6根）
+    mild_multiplier: 0.5            # 轻度下跌时买入数量乘数（打5折）
+    severe_multiplier: 0.2          # 严重阴跌时买入数量乘数（打2折）
+    severe_window_ratio: 0.1        # 严重阴跌时买单窗口比例（只挂30%的买单）
     kline_interval: "5m"            # K线周期（默认5分钟）
     #
     # 判定逻辑：
