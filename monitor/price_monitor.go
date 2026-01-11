@@ -85,21 +85,73 @@ func (pm *PriceMonitor) Start() error {
 
 	pm.isRunning.Store(true)
 
-	// 启动价格流（WebSocket）- 这是唯一的价格来源
-	// 注意：毫秒级量化系统不能容忍 REST API 轮询的延迟
+	// 首先尝试启动价格流（WebSocket）
+	logger.Info("🔗 [价格监控] 尝试启动 WebSocket 价格流...")
 	err := pm.exchange.StartPriceStream(pm.ctx, pm.symbol, func(price float64) {
 		pm.updatePrice(price)
 	})
+
 	if err != nil {
-		// WebSocket 失败时直接返回错误，系统将停止
-		pm.isRunning.Store(false)
-		return fmt.Errorf("启动价格流失败（WebSocket 是唯一价格来源）: %w", err)
+		logger.Warn("⚠️ [价格监控] WebSocket 启动失败: %v", err)
+		logger.Info("🔄 [价格监控] 尝试使用 REST API 获取初始价格...")
+
+		// 降级：使用 REST API 获取一次价格作为初始值
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		initialPrice, restErr := pm.exchange.GetLatestPrice(ctx, pm.symbol)
+		if restErr != nil {
+			pm.isRunning.Store(false)
+			return fmt.Errorf("WebSocket 和 REST API 都失败: WebSocket=%v, REST=%v", err, restErr)
+		}
+
+		if initialPrice <= 0 {
+			pm.isRunning.Store(false)
+			return fmt.Errorf("获取到无效的初始价格: %f", initialPrice)
+		}
+
+		// 设置初始价格
+		pm.updatePrice(initialPrice)
+		logger.Info("✅ [价格监控] 已获取初始价格: %.6f (REST API)", initialPrice)
+
+		// 启动轮询模式作为备用
+		go pm.fallbackPolling()
+		logger.Warn("⚠️ [价格监控] 使用 REST API 轮询模式 (备用方案)")
+	} else {
+		logger.Info("✅ [价格监控] WebSocket 价格流已启动")
 	}
 
-	logger.Info("✅ 价格监控已启动 (WebSocket 推送)")
 	go pm.periodicPriceSender() // 启动定期发送协程
-
 	return nil
+}
+
+// fallbackPolling REST API 轮询模式（备用方案）
+func (pm *PriceMonitor) fallbackPolling() {
+	ticker := time.NewTicker(1 * time.Second) // 1秒轮询一次
+	defer ticker.Stop()
+
+	logger.Info("🔄 [价格监控] REST API 轮询模式已启动")
+
+	for {
+		select {
+		case <-pm.ctx.Done():
+			logger.Info("✅ [价格监控] REST API 轮询已停止")
+			return
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			price, err := pm.exchange.GetLatestPrice(ctx, pm.symbol)
+			cancel()
+
+			if err != nil {
+				logger.Debug("⚠️ [价格监控] REST API 获取价格失败: %v", err)
+				continue
+			}
+
+			if price > 0 {
+				pm.updatePrice(price)
+			}
+		}
+	}
 }
 
 // pollPrice 已移除 - 毫秒级量化系统不使用 REST API 轮询

@@ -91,8 +91,14 @@ func (w *WebSocketManager) StartPriceStream(ctx context.Context, symbol string, 
 	// 使用通道等待首个价格
 	firstPriceCh := make(chan struct{})
 	firstPriceReceived := false
+	var firstPriceOnce sync.Once
+
+	logger.Info("🔗 [Binance] 启动价格流: %s", symbol)
 
 	go func() {
+		retryCount := 0
+		maxRetries := 5
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -101,17 +107,32 @@ func (w *WebSocketManager) StartPriceStream(ctx context.Context, symbol string, 
 			default:
 			}
 
-			logger.Debug("🔗 [Binance] 正在连接 WebSocket: %s", url)
+			retryCount++
+			if retryCount > maxRetries {
+				logger.Error("❌ [Binance] 价格流连接失败，已达最大重试次数: %d", maxRetries)
+				return
+			}
 
-			// 导入 gorilla/websocket
-			conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+			logger.Debug("🔗 [Binance] 正在连接 WebSocket (第%d次尝试): %s", retryCount, url)
+
+			// 设置连接超时
+			dialer := websocket.DefaultDialer
+			dialer.HandshakeTimeout = 10 * time.Second
+
+			conn, _, err := dialer.Dial(url, nil)
 			if err != nil {
-				logger.Error("❌ [Binance] WebSocket 连接失败: %v，5秒后重试", err)
+				logger.Error("❌ [Binance] WebSocket 连接失败 (第%d次): %v，5秒后重试", retryCount, err)
 				time.Sleep(5 * time.Second)
 				continue
 			}
 
-			logger.Info("✅ [Binance] WebSocket 已连接: %s", url) // 读取消息循环
+			logger.Info("✅ [Binance] WebSocket 已连接: %s", url)
+			retryCount = 0 // 连接成功，重置重试计数
+
+			// 设置读取超时
+			conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+
+			// 读取消息循环
 			for {
 				select {
 				case <-ctx.Done():
@@ -129,6 +150,9 @@ func (w *WebSocketManager) StartPriceStream(ctx context.Context, symbol string, 
 					break // 跳出内层循环，重新连接
 				}
 
+				// 重置读取超时
+				conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+
 				// 解析消息（只提取必要字段）
 				var event struct {
 					Symbol string `json:"s"`
@@ -140,20 +164,34 @@ func (w *WebSocketManager) StartPriceStream(ctx context.Context, symbol string, 
 					continue
 				}
 
+				// 验证交易对
+				if !strings.EqualFold(event.Symbol, symbol) {
+					continue
+				}
+
 				price, err := strconv.ParseFloat(event.Price, 64)
 				if err != nil {
 					logger.Debug("解析价格失败: %v", err)
 					continue
-				} // 更新价格缓存
+				}
+
+				if price <= 0 {
+					logger.Debug("收到无效价格: %f", price)
+					continue
+				}
+
+				// 更新价格缓存
 				w.priceMu.Lock()
 				w.latestPrice = price
 				w.priceMu.Unlock()
 
-				// 通知首个价格已接收
+				// 通知首个价格已接收（只执行一次）
 				if !firstPriceReceived {
-					firstPriceReceived = true
-					logger.Debug("✅ [Binance] 收到首个价格: %.2f", price)
-					close(firstPriceCh)
+					firstPriceOnce.Do(func() {
+						firstPriceReceived = true
+						logger.Info("✅ [Binance] 收到首个价格: %.6f", price)
+						close(firstPriceCh)
+					})
 				}
 
 				// 调用回调
@@ -162,13 +200,13 @@ func (w *WebSocketManager) StartPriceStream(ctx context.Context, symbol string, 
 		}
 	}()
 
-	// 等待接收首个价格（最多10秒）
+	// 等待接收首个价格（最多15秒）
 	select {
 	case <-firstPriceCh:
-		logger.Debug("✅ [Binance] 价格流已启动: %s@aggTrade", symbolLower)
+		logger.Info("✅ [Binance] 价格流已启动: %s@aggTrade", symbolLower)
 		return nil
-	case <-time.After(10 * time.Second):
-		return fmt.Errorf("等待首个价格超时（10秒）")
+	case <-time.After(15 * time.Second):
+		return fmt.Errorf("等待首个价格超时（15秒）")
 	case <-ctx.Done():
 		return fmt.Errorf("上下文已取消")
 	}

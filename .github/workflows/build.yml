@@ -1,0 +1,156 @@
+name: Build OpenSQT Binaries
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  release:
+    types: [ created ]
+
+jobs:
+  build:
+    name: Build Binaries
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        include:
+          # Linux builds
+          - goos: linux
+            goarch: amd64
+            suffix: ""
+          - goos: linux
+            goarch: arm64
+            suffix: ""
+          
+          # Windows builds
+          - goos: windows
+            goarch: amd64
+            suffix: ".exe"
+          
+          # macOS builds
+          - goos: darwin
+            goarch: amd64
+            suffix: ""
+          - goos: darwin
+            goarch: arm64
+            suffix: ""
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Build OpenSQT
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        CGO_ENABLED: 0
+      run: |
+        mkdir -p dist
+        go build -ldflags="-s -w" -o dist/opensqt-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }} .
+
+    - name: Build Telegram Bot
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        CGO_ENABLED: 0
+      run: |
+        go build -ldflags="-s -w" -o dist/telegram_bot-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }} ./cmd/telegram_bot
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: opensqt-binaries-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: dist/
+        retention-days: 30
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts
+
+    - name: Create release archive
+      run: |
+        mkdir -p release
+        cd artifacts
+        for dir in opensqt-binaries-*; do
+          if [ -d "$dir" ]; then
+            cd "$dir"
+            tar -czf "../../release/${dir}.tar.gz" *
+            cd ..
+          fi
+        done
+
+    - name: Upload release assets
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release/*.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and push OpenSQT Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: |
+          ghcr.io/${{ github.repository_owner }}/opensqt:latest
+          ghcr.io/${{ github.repository_owner }}/opensqt:${{ github.sha }}
+        platforms: linux/amd64,linux/arm64
+
+    - name: Build and push Telegram Bot Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.telegram
+        push: true
+        tags: |
+          ghcr.io/${{ github.repository_owner }}/opensqt-telegram:latest
+          ghcr.io/${{ github.repository_owner }}/opensqt-telegram:${{ github.sha }}
+        platforms: linux/amd64,linux/arm64

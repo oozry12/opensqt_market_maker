@@ -75,9 +75,9 @@ const (
 
 // 持仓状态常量
 const (
-	PositionStatusEmpty = "EMPTY" // 空仓
-	PositionStatusLong  = "LONG"  // 多仓
-	PositionStatusShort = "SHORT" // 空仓
+	PositionStatusEmpty  = "EMPTY"  // 空仓
+	PositionStatusFilled = "FILLED" // 多仓
+	PositionStatusShort  = "SHORT"  // 空仓
 )
 
 // 槽位锁定状态
@@ -529,8 +529,8 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 		slot.mu.Lock()
 		defer slot.mu.Unlock()
 
-		// 🔥 卖单条件：持仓状态=LONG + 槽位锁=FREE + 无订单ID + 无ClientOID
-		if slot.PositionStatus == PositionStatusLong &&
+		// 🔥 卖单条件：持仓状态=FILLED + 槽位锁=FREE + 无订单ID + 无ClientOID
+		if slot.PositionStatus == PositionStatusFilled &&
 			slot.SlotStatus == SlotStatusFree &&
 			slot.OrderID == 0 &&
 			slot.ClientOID == "" {
@@ -601,7 +601,7 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 			currentStatus := slot.PositionStatus
 			currentQty := slot.PositionQty
 
-			if currentStatus != PositionStatusLong || currentQty <= 0 {
+			if currentStatus != PositionStatusFilled || currentQty <= 0 {
 				slot.mu.Unlock()
 				continue
 			}
@@ -629,9 +629,9 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 		}
 	}
 
-	// 3. 处理做空网格（中性合约网格）
+	// 3. 处理做空网格（中性合约网格）- 只在当前价格上方操作
 	if spm.config.Trading.NeutralGrid.Enabled {
-		spm.handleNeutralGrid(currentPrice, priceInterval, remainingOrders, &ordersToPlace, &buyOrdersToCreate)
+		spm.handleNeutralGrid(currentPrice, priceInterval, remainingOrders-buyOrdersToCreate, &ordersToPlace)
 	}
 
 	// 执行下单
@@ -690,7 +690,7 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 			isInstantFill := false
 			if side == "BUY" {
 				// 买单秒成交: 有持仓但订单ID为0且OrderSide已清空
-				isInstantFill = (slot.PositionStatus == PositionStatusLong && slot.OrderID == 0 && slot.OrderSide == "")
+				isInstantFill = (slot.PositionStatus == PositionStatusFilled && slot.OrderID == 0 && slot.OrderSide == "")
 			} else if side == "SELL" {
 				// 🔥 卖单秒成交: 持仓已清空且订单ID为0且OrderSide已清空
 				isInstantFill = (slot.PositionStatus == PositionStatusEmpty && slot.OrderID == 0 && slot.OrderSide == "" && slot.SlotStatus == SlotStatusFree)
@@ -805,22 +805,22 @@ func (spm *SuperPositionManager) OnOrderUpdate(update OrderUpdate) {
 				slot.OrderSide = "" // 🔥 清除订单方向，避免误判
 				slot.OrderFilledQty = 0
 
-				// 🔥 中性网格：区分开多仓和平空仓
+				// 🔥 修复：简化持仓状态判断
 				if slot.PositionQty > 0.000001 {
-					// 持仓为正数，开多仓成功
-					slot.PositionStatus = PositionStatusLong // 标记为多仓
-					logger.Info("✅ [开多仓成交] 价格: %s, 持仓: %.4f, 槽位状态: %s -> %s",
-						formatPrice(price, spm.priceDecimals), slot.PositionQty, PositionStatusEmpty, PositionStatusLong)
+					// 正数持仓 = 多仓
+					slot.PositionStatus = PositionStatusFilled
+					logger.Info("✅ [买单成交] 价格: %s, 持仓: %.4f (多仓)",
+						formatPrice(price, spm.priceDecimals), slot.PositionQty)
 				} else if slot.PositionQty < -0.000001 {
-					// 持仓为负数，平空仓成功
-					slot.PositionStatus = PositionStatusShort // 保持空仓状态
-					logger.Info("✅ [平空仓成交] 价格: %s, 剩余空仓: %.4f, 槽位状态: %s",
-						formatPrice(price, spm.priceDecimals), slot.PositionQty, PositionStatusShort)
+					// 负数持仓 = 空仓（买入平空仓后剩余）
+					slot.PositionStatus = PositionStatusShort
+					logger.Info("✅ [平空仓] 价格: %s, 剩余空仓: %.4f",
+						formatPrice(price, spm.priceDecimals), slot.PositionQty)
 				} else {
-					// 持仓已清空，平空仓完成
-					slot.PositionStatus = PositionStatusEmpty // 标记为空仓
-					logger.Info("✅ [平空仓完成] 价格: %s, 空仓已平, 槽位状态: %s -> %s",
-						formatPrice(price, spm.priceDecimals), PositionStatusShort, PositionStatusEmpty)
+					// 持仓为0 = 空仓位
+					slot.PositionStatus = PositionStatusEmpty
+					logger.Info("✅ [平仓完成] 价格: %s, 持仓已清空",
+						formatPrice(price, spm.priceDecimals))
 				}
 				// 🔥 释放槽位锁：买单成交，允许后续挂卖单
 				slot.SlotStatus = SlotStatusFree
@@ -849,26 +849,28 @@ func (spm *SuperPositionManager) OnOrderUpdate(update OrderUpdate) {
 				slot.OrderSide = "" // 🔥 清除订单方向，避免误判
 				slot.OrderFilledQty = 0
 
-				// 🔥 中性网格：区分平多仓和开空仓
-				if slot.PositionQty < 0.000001 {
-					// 持仓已清空，可能是平多仓
-					if slot.PositionStatus == PositionStatusLong {
-						slot.PositionStatus = PositionStatusEmpty // 标记为空仓
-						logger.Info("✅ [平多仓成交] 价格: %s, 持仓已清空, 槽位状态: %s -> %s",
-							formatPrice(price, spm.priceDecimals), PositionStatusLong, PositionStatusEmpty)
-					}
+				// 🔥 修复：简化持仓状态判断
+				if slot.PositionQty > 0.000001 {
+					// 正数持仓 = 多仓（卖出减仓后剩余）
+					slot.PositionStatus = PositionStatusFilled
+					logger.Info("✅ [卖单成交] 价格: %s, 剩余持仓: %.4f (多仓)",
+						formatPrice(price, spm.priceDecimals), slot.PositionQty)
 				} else if slot.PositionQty < -0.000001 {
-					// 持仓为负数，开空仓成功
-					slot.PositionStatus = PositionStatusShort // 标记为空仓
-					logger.Info("✅ [开空仓成交] 价格: %s, 持仓: %.4f, 槽位状态: %s -> %s",
-						formatPrice(price, spm.priceDecimals), slot.PositionQty, PositionStatusEmpty, PositionStatusShort)
+					// 负数持仓 = 空仓（开空仓成功）
+					slot.PositionStatus = PositionStatusShort
+					logger.Info("✅ [开空仓] 价格: %s, 空仓: %.4f",
+						formatPrice(price, spm.priceDecimals), slot.PositionQty)
+				} else {
+					// 持仓为0 = 空仓位（平仓完成）
+					slot.PositionStatus = PositionStatusEmpty
+					logger.Info("✅ [平仓完成] 价格: %s, 持仓已清空",
+						formatPrice(price, spm.priceDecimals))
 				}
-				// 🔥 释放槽位锁：卖单成交，允许后续挂买单
+
+				// 🔥 释放槽位锁：卖单成交，允许后续操作
 				slot.SlotStatus = SlotStatusFree
 				// 🔥 卖单成交，重置PostOnly失败计数
 				slot.PostOnlyFailCount = 0
-				logger.Info("✅ [卖单成交] 价格: %s, 剩余持仓: %.4f, 槽位状态: %s, 订单状态: %s, SlotStatus: FREE",
-					formatPrice(price, spm.priceDecimals), slot.PositionQty, slot.PositionStatus, slot.OrderStatus)
 			} else {
 				slot.OrderStatus = OrderStatusPartiallyFilled
 			}
@@ -885,7 +887,7 @@ func (spm *SuperPositionManager) OnOrderUpdate(update OrderUpdate) {
 				// 部分成交后被取消：保留持仓，允许后续挂卖单
 				logger.Info("💡 [买单部分成交后取消] 价格: %s, 持仓: %.4f, 转为多仓状态",
 					formatPrice(price, spm.priceDecimals), slot.PositionQty)
-				slot.PositionStatus = PositionStatusLong
+				slot.PositionStatus = PositionStatusFilled
 				slot.SlotStatus = SlotStatusFree // 允许挂卖单
 			} else {
 				// 完全未成交被取消：重置为空槽位
@@ -901,7 +903,7 @@ func (spm *SuperPositionManager) OnOrderUpdate(update OrderUpdate) {
 				slot.PostOnlyFailCount++
 				logger.Info("🔄 [卖单取消] 价格: %s, 保持持仓状态: %.4f, 等待重挂, PostOnly失败计数: %d",
 					formatPrice(price, spm.priceDecimals), slot.PositionQty, slot.PostOnlyFailCount)
-				slot.PositionStatus = PositionStatusLong
+				slot.PositionStatus = PositionStatusFilled
 				slot.SlotStatus = SlotStatusFree // 允许重新挂卖单
 			} else {
 				// 异常情况：卖单取消但没有持仓，重置为空
@@ -1314,7 +1316,7 @@ func (spm *SuperPositionManager) initializeSellSlotsFromPosition(totalPosition f
 		slot.mu.Lock()
 
 		// 设置为多仓状态
-		slot.PositionStatus = PositionStatusLong
+		slot.PositionStatus = PositionStatusFilled
 		slot.PositionQty = slotQty
 
 		// 清空订单信息，但设置方向为SELL（因为这是恢复的持仓，将来要挂卖单）
@@ -1376,7 +1378,7 @@ func (spm *SuperPositionManager) PrintPositions() {
 		slot := value.(*InventorySlot)
 		slot.mu.RLock()
 		// 🔥 中性网格：显示多仓和空仓
-		if (slot.PositionStatus == PositionStatusLong && slot.PositionQty > 0.001) ||
+		if (slot.PositionStatus == PositionStatusFilled && slot.PositionQty > 0.001) ||
 			(slot.PositionStatus == PositionStatusShort && slot.PositionQty < -0.001) {
 			positions = append(positions, positionInfo{
 				Price:       price,
@@ -1536,7 +1538,7 @@ func (spm *SuperPositionManager) PrintPositions() {
 			statusDesc := ""
 
 			// 🔥 中性网格：区分多仓和空仓
-			if slot.PositionStatus == PositionStatusLong {
+			if slot.PositionStatus == PositionStatusFilled {
 				statusIcon = "🟢" // 多仓
 				statusDesc = fmt.Sprintf("多仓: %.4f %s", slot.PositionQty, baseCurrency)
 				longSlotCount++
@@ -1590,29 +1592,25 @@ func formatPrice(price float64, decimals int) string {
 }
 
 // handleNeutralGrid 处理中性合约网格（做空网格逻辑）
-// 只在单边上涨趋势中的暴跌时才开启做空
-func (spm *SuperPositionManager) handleNeutralGrid(currentPrice float64, priceInterval float64, remainingOrders int, ordersToPlace *[]*OrderRequest, buyOrdersToCreate *int) {
+// 修复版本：严格分离价格区间，做空网格只在当前价格上方操作
+func (spm *SuperPositionManager) handleNeutralGrid(currentPrice float64, priceInterval float64, remainingOrders int, ordersToPlace *[]*OrderRequest) {
 	if !spm.config.Trading.NeutralGrid.Enabled {
 		return
 	}
 
+	// 检查是否应该开空仓（需要暴跌检测器确认）
 	shouldOpenShort := false
-	if spm.crashDetector != nil {
+	if spm.crashDetector != nil && spm.crashDetector.IsEnabled() {
 		shouldOpenShort = spm.crashDetector.ShouldOpenShort()
 	}
 
-	if shouldOpenShort {
-		logger.Debug("🚨 [中性网格] 检测到单边上涨趋势中的暴跌，允许开空仓")
-	} else {
-		logger.Debug("🔒 [中性网格] 未检测到暴跌，仅允许平空仓")
-	}
-
+	// 统计当前空仓情况
 	var shortPositionCount int
 	var shortPositionQty float64
 	spm.slots.Range(func(key, value interface{}) bool {
 		slot := value.(*InventorySlot)
 		slot.mu.RLock()
-		if slot.PositionStatus == PositionStatusShort {
+		if slot.PositionStatus == PositionStatusShort && slot.PositionQty < 0 {
 			shortPositionCount++
 			shortPositionQty += math.Abs(slot.PositionQty)
 		}
@@ -1621,188 +1619,232 @@ func (spm *SuperPositionManager) handleNeutralGrid(currentPrice float64, priceIn
 	})
 
 	maxShortPositions := spm.config.Trading.NeutralGrid.MaxShortPositions
-	if shortPositionCount >= maxShortPositions {
-		logger.Debug("🔒 [中性网格] 空仓数量已达上限: %d/%d", shortPositionCount, maxShortPositions)
+	if maxShortPositions <= 0 {
+		maxShortPositions = 5 // 默认最大5个空仓
 	}
 
-	shortWindowMaxPrice := currentPrice + float64(maxShortPositions)*priceInterval
-	shortWindowMaxPrice = roundPrice(shortWindowMaxPrice, spm.priceDecimals)
+	logger.Debug("🔍 [中性网格] 当前空仓: %d/%d, 总数量: %.4f, 允许开空: %v", 
+		shortPositionCount, maxShortPositions, shortPositionQty, shouldOpenShort)
 
-	shortCloseMinPrice := currentPrice - float64(maxShortPositions)*priceInterval
-	shortCloseMinPrice = roundPrice(shortCloseMinPrice, spm.priceDecimals)
+	// 🔥 关键修复：严格分离价格区间
+	// 做空网格只在当前价格上方操作，避免与做多网格冲突
+	shortGridStartPrice := currentPrice + priceInterval // 从当前价格上方第一个网格开始
+	shortGridStartPrice = roundPrice(shortGridStartPrice, spm.priceDecimals)
 
+	// 1. 处理平空仓（买入平仓）- 优先处理，释放资金
+	spm.handleShortClose(currentPrice, priceInterval, remainingOrders, ordersToPlace)
+
+	// 2. 处理开空仓（卖出开仓）- 只在允许时执行
+	if shouldOpenShort && shortPositionCount < maxShortPositions {
+		remainingAfterClose := remainingOrders - len(*ordersToPlace)
+		spm.handleShortOpen(shortGridStartPrice, priceInterval, remainingAfterClose, maxShortPositions-shortPositionCount, ordersToPlace)
+	}
+}
+
+// handleShortClose 处理平空仓逻辑
+func (spm *SuperPositionManager) handleShortClose(currentPrice float64, priceInterval float64, remainingOrders int, ordersToPlace *[]*OrderRequest) {
 	type shortCloseCandidate struct {
-		SlotPrice     float64
-		ClosePrice    float64
-		Quantity      float64
-		ProfitRate    float64
+		SlotPrice     float64 // 开空仓价格
+		ClosePrice    float64 // 平仓价格
+		Quantity      float64 // 平仓数量
+		ProfitRate    float64 // 利润率
+		Distance      float64 // 距离当前价格
 	}
-	var shortCloseCandidates []shortCloseCandidate
+	var candidates []shortCloseCandidate
 
+	// 扫描所有空仓槽位
 	spm.slots.Range(func(key, value interface{}) bool {
 		slotPrice := key.(float64)
 		slot := value.(*InventorySlot)
 		slot.mu.Lock()
 		defer slot.mu.Unlock()
 
-		if slot.PositionStatus == PositionStatusShort &&
-			slot.SlotStatus == SlotStatusFree &&
-			slot.OrderID == 0 &&
-			slot.ClientOID == "" {
+		// 🔥 修复：只处理空仓且无活跃订单的槽位
+		if slot.PositionStatus == PositionStatusShort && 
+		   slot.PositionQty < -0.000001 && // 确保是负数（空仓）
+		   slot.SlotStatus == SlotStatusFree &&
+		   slot.OrderID == 0 &&
+		   slot.ClientOID == "" {
 
+			// 平空仓价格 = 开仓价格 - 间距（买入平仓）
 			closePrice := slotPrice - priceInterval
 			closePrice = roundPrice(closePrice, spm.priceDecimals)
 
-			if closePrice < shortCloseMinPrice {
-				return true
+			// 🔥 安全检查：平仓价格不应高于当前价格（避免亏损平仓）
+			if closePrice >= currentPrice {
+				return true // 跳过这个槽位
 			}
 
+			// 计算利润率
 			profitRate := (slotPrice - closePrice) / slotPrice
 			minProfitRate := spm.config.Trading.NeutralGrid.ShortCloseRate
 			if minProfitRate <= 0 {
-				minProfitRate = 0.005
+				minProfitRate = 0.005 // 默认0.5%
 			}
 
+			// 只有达到最小利润率才平仓
 			if profitRate >= minProfitRate {
-				quantity := math.Abs(slot.PositionQty)
-				shortCloseCandidates = append(shortCloseCandidates, shortCloseCandidate{
+				quantity := math.Abs(slot.PositionQty) // 转为正数
+				distance := math.Abs(closePrice - currentPrice)
+				
+				candidates = append(candidates, shortCloseCandidate{
 					SlotPrice:  slotPrice,
 					ClosePrice: closePrice,
 					Quantity:   quantity,
 					ProfitRate: profitRate,
+					Distance:   distance,
 				})
 			}
 		}
 		return true
 	})
 
-	sort.Slice(shortCloseCandidates, func(i, j int) bool {
-		return shortCloseCandidates[i].ProfitRate > shortCloseCandidates[j].ProfitRate
+	// 按利润率排序，优先平仓利润率高的
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].ProfitRate > candidates[j].ProfitRate
 	})
 
-	for _, candidate := range shortCloseCandidates {
-		if len(*ordersToPlace)+*buyOrdersToCreate >= remainingOrders {
+	// 生成平空仓订单
+	for _, candidate := range candidates {
+		if len(*ordersToPlace) >= remainingOrders {
 			break
 		}
 
+		// 最小订单价值检查
+		orderValue := candidate.ClosePrice * candidate.Quantity
+		minValue := spm.config.Trading.MinOrderValue
+		if minValue <= 0 {
+			minValue = 6.0
+		}
+		if orderValue < minValue {
+			continue
+		}
+
+		// 锁定槽位
 		slot := spm.getOrCreateSlot(candidate.SlotPrice)
 		slot.mu.Lock()
-
 		if slot.SlotStatus != SlotStatusFree {
 			slot.mu.Unlock()
 			continue
 		}
-
 		slot.SlotStatus = SlotStatusPending
 		usePostOnly := slot.PostOnlyFailCount < 3
 		slot.mu.Unlock()
 
+		// 生成买入平仓订单
 		clientOID := spm.generateClientOrderID(candidate.SlotPrice, "BUY")
-
 		*ordersToPlace = append(*ordersToPlace, &OrderRequest{
 			Symbol:        spm.config.Trading.Symbol,
 			Side:          "BUY",
 			Price:         candidate.ClosePrice,
 			Quantity:      candidate.Quantity,
 			PriceDecimals: spm.priceDecimals,
-			ReduceOnly:    true,
+			ReduceOnly:    true, // 🔥 关键：平仓单
 			PostOnly:      usePostOnly,
 			ClientOrderID: clientOID,
 		})
 
-		logger.Debug("🔄 [中性网格] 平空仓: 开仓价=%s, 平仓价=%s, 数量=%.4f, 利润率=%.2f%%",
+		logger.Debug("📈 [平空仓] 开仓价: %s, 平仓价: %s, 数量: %.4f, 利润率: %.2f%%",
 			formatPrice(candidate.SlotPrice, spm.priceDecimals),
 			formatPrice(candidate.ClosePrice, spm.priceDecimals),
 			candidate.Quantity,
 			candidate.ProfitRate*100)
 	}
+}
 
-	if !shouldOpenShort {
+// handleShortOpen 处理开空仓逻辑
+func (spm *SuperPositionManager) handleShortOpen(startPrice float64, priceInterval float64, remainingOrders int, maxNewShorts int, ordersToPlace *[]*OrderRequest) {
+	if maxNewShorts <= 0 || remainingOrders <= 0 {
 		return
 	}
 
-	type shortOpenCandidate struct {
-		SlotPrice  float64
-		OpenPrice  float64
-		Quantity   float64
-		Distance   float64
-	}
-	var shortOpenCandidates []shortOpenCandidate
+	// 🔥 修复：只在当前价格上方开空仓，避免与做多网格冲突
+	shortSlotPrices := spm.calculateSlotPricesWithInterval(startPrice, maxNewShorts, "up", priceInterval)
 
-	currentGridPrice := spm.findNearestGridPriceWithInterval(currentPrice, priceInterval)
-	shortSlotPrices := spm.calculateSlotPricesWithInterval(currentGridPrice, maxShortPositions, "up", priceInterval)
+	type shortOpenCandidate struct {
+		SlotPrice float64
+		OpenPrice float64
+		Quantity  float64
+		Distance  float64
+	}
+	var candidates []shortOpenCandidate
 
 	for _, slotPrice := range shortSlotPrices {
-		if slotPrice > shortWindowMaxPrice {
-			continue
-		}
-
 		slot := spm.getOrCreateSlot(slotPrice)
 		slot.mu.Lock()
 
+		// 🔥 修复：只在空槽位开空仓
 		if slot.PositionStatus == PositionStatusEmpty &&
-			slot.SlotStatus == SlotStatusFree &&
-			slot.OrderID == 0 &&
-			slot.ClientOID == "" {
+		   slot.SlotStatus == SlotStatusFree &&
+		   slot.OrderID == 0 &&
+		   slot.ClientOID == "" {
 
 			openPrice := slotPrice
-			distance := math.Abs(openPrice - currentPrice)
+			distance := math.Abs(openPrice - startPrice)
 
+			// 计算开仓数量
 			openQty := spm.config.Trading.OrderQuantity / openPrice
 			openQty = roundPrice(openQty, spm.quantityDecimals)
 
-			shortOpenCandidates = append(shortOpenCandidates, shortOpenCandidate{
+			candidates = append(candidates, shortOpenCandidate{
 				SlotPrice: slotPrice,
 				OpenPrice: openPrice,
 				Quantity:  openQty,
 				Distance:  distance,
 			})
 		}
-
 		slot.mu.Unlock()
 	}
 
-	sort.Slice(shortOpenCandidates, func(i, j int) bool {
-		return shortOpenCandidates[i].Distance < shortOpenCandidates[j].Distance
+	// 按距离排序，优先开仓距离近的
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Distance < candidates[j].Distance
 	})
 
-	shortOrdersToCreate := maxShortPositions - shortPositionCount
-	for _, candidate := range shortOpenCandidates {
-		if len(*ordersToPlace)+*buyOrdersToCreate >= remainingOrders {
-			break
-		}
-		if shortOrdersToCreate <= 0 {
+	// 生成开空仓订单
+	shortOrdersCreated := 0
+	for _, candidate := range candidates {
+		if len(*ordersToPlace) >= remainingOrders || shortOrdersCreated >= maxNewShorts {
 			break
 		}
 
+		// 最小订单价值检查
+		orderValue := candidate.OpenPrice * candidate.Quantity
+		minValue := spm.config.Trading.MinOrderValue
+		if minValue <= 0 {
+			minValue = 6.0
+		}
+		if orderValue < minValue {
+			continue
+		}
+
+		// 锁定槽位
 		slot := spm.getOrCreateSlot(candidate.SlotPrice)
 		slot.mu.Lock()
-
 		if slot.SlotStatus != SlotStatusFree {
 			slot.mu.Unlock()
 			continue
 		}
-
 		slot.SlotStatus = SlotStatusPending
 		usePostOnly := slot.PostOnlyFailCount < 3
 		slot.mu.Unlock()
 
+		// 生成卖出开仓订单
 		clientOID := spm.generateClientOrderID(candidate.SlotPrice, "SELL")
-
 		*ordersToPlace = append(*ordersToPlace, &OrderRequest{
 			Symbol:        spm.config.Trading.Symbol,
 			Side:          "SELL",
 			Price:         candidate.OpenPrice,
 			Quantity:      candidate.Quantity,
 			PriceDecimals: spm.priceDecimals,
-			ReduceOnly:    false,
+			ReduceOnly:    false, // 🔥 关键：开仓单
 			PostOnly:      usePostOnly,
 			ClientOrderID: clientOID,
 		})
 
-		shortOrdersToCreate--
+		shortOrdersCreated++
 
-		logger.Debug("🔄 [中性网格] 开空仓: 价格=%s, 数量=%.4f, 距离=%.4f",
+		logger.Debug("📉 [开空仓] 价格: %s, 数量: %.4f, 距离: %.4f",
 			formatPrice(candidate.OpenPrice, spm.priceDecimals),
 			candidate.Quantity,
 			candidate.Distance)
