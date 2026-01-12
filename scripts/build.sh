@@ -27,12 +27,19 @@ go build -ldflags="-s -w" -o telegram_bot ./cmd/telegram_bot
 chmod +x telegram_bot
 echo "✅ Telegram Bot 编译完成: telegram_bot"
 
+# 编译 Webhook Server (可选)
+echo "🔨 编译 Webhook Server..."
+go build -ldflags="-s -w" -o webhook_server ./cmd/webhook_server
+chmod +x webhook_server
+echo "✅ Webhook Server 编译完成: webhook_server"
+
 echo ""
 echo "🎉 编译完成！"
 echo ""
 echo "使用方法："
 echo "1. 启动主程序: ./opensqt config.yaml"
 echo "2. 启动 Telegram Bot: ./telegram_bot"
+echo "3. 启动 Webhook Server (可选): ./webhook_server"
 echo ""
 echo "或者使用 Telegram Bot 远程控制："
 echo "1. 配置 .env 文件中的 TELEGRAM_BOT_TOKEN 和 TELEGRAM_ALLOWED_USERS"
