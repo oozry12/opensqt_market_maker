@@ -1,4 +1,4 @@
-﻿package position
+package position
 
 import (
 	"context"
@@ -531,8 +531,9 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 		slot.mu.Lock()
 		defer slot.mu.Unlock()
 
-		// 🔥 卖单条件：持仓状态=FILLED + 槽位锁=FREE + 无订单ID + 无ClientOID
+		// 🔥 卖单条件：持仓状态=FILLED + 持仓数量>0 + 槽位锁=FREE + 无订单ID + 无ClientOID
 		if slot.PositionStatus == PositionStatusFilled &&
+			slot.PositionQty > 0.000001 &&
 			slot.SlotStatus == SlotStatusFree &&
 			slot.OrderID == 0 &&
 			slot.ClientOID == "" {
@@ -1750,7 +1751,18 @@ func (spm *SuperPositionManager) handleCloseShort(currentPrice float64, priceInt
 			slot.OrderID == 0 &&
 			slot.ClientOID == "" {
 
-			closePrice := slotPrice - priceInterval
+			// 🔥 优化：平仓价选择策略
+			// 策略1: 如果开空价 > 当前价 + 2*间隔，使用做多平仓价 + 间隔（避免价格冲突）
+			// 策略2: 否则平仓价 = 开空价 - 间隔（正常平仓）
+			var closePrice float64
+			if slotPrice > currentPrice+2*priceInterval {
+				// 价格已经下跌较多，使用做多平仓价+间隔快速平仓
+				// 这样可以避免与做多平仓价冲突
+				closePrice = currentPrice + 2*priceInterval
+			} else {
+				// 价格接近开空价，使用正常平仓价
+				closePrice = slotPrice - priceInterval
+			}
 			closePrice = roundPrice(closePrice, spm.priceDecimals)
 
 			profitRate := (slotPrice - closePrice) / slotPrice
