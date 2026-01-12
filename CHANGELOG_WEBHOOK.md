@@ -110,13 +110,13 @@ GitHub Actions 自动触发
 ```bash
 # Webhook 配置
 WEBHOOK_SECRET=your_strong_secret_here
-WEBHOOK_PORT=9000
+WEBHOOK_PORT=9001
 DEPLOY_SCRIPT=./quick_deploy.sh
 WORK_DIR=.
 ```
 
 ### GitHub Secrets
-- `WEBHOOK_URL`: `http://your-server-ip:9000/webhook`
+- `WEBHOOK_URL`: `http://your-server-ip:9001/webhook`
 - `WEBHOOK_SECRET`: 与服务器相同的密码
 
 ## 🚀 使用方法

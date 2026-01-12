@@ -261,7 +261,7 @@ trading:
    ```bash
    # 配置 .env 文件
    echo "WEBHOOK_SECRET=$(openssl rand -hex 32)" >> .env
-   echo "WEBHOOK_PORT=9000" >> .env
+   echo "WEBHOOK_PORT=9001" >> .env
    
    # 启动服务
    ./start_webhook.sh
@@ -269,7 +269,7 @@ trading:
 
 2. **配置 GitHub Secrets**
    - 进入仓库 Settings → Secrets and variables → Actions
-   - 添加 `WEBHOOK_URL`: `http://your-server-ip:9000/webhook`
+   - 添加 `WEBHOOK_URL`: `http://your-server-ip:9001/webhook`
    - 添加 `WEBHOOK_SECRET`: 与 .env 中相同的密码
 
 3. **完成！**

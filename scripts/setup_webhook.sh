@@ -31,7 +31,7 @@ echo ""
 
 # 询问端口
 read -p "🔌 Webhook 端口 (默认 9000): " WEBHOOK_PORT
-WEBHOOK_PORT=${WEBHOOK_PORT:-9000}
+WEBHOOK_PORT=${WEBHOOK_PORT:-9001}
 
 # 编译 webhook_server
 echo "🔨 编译 webhook_server..."

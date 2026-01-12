@@ -34,7 +34,7 @@ go build -o webhook_server ./cmd/webhook_server
 ```bash
 # Webhook 配置
 WEBHOOK_SECRET=your_strong_secret_here  # 设置一个强密码
-WEBHOOK_PORT=9000                        # 监听端口
+WEBHOOK_PORT=9001                        # 监听端口
 DEPLOY_SCRIPT=./quick_deploy.sh         # 部署脚本路径
 WORK_DIR=.                               # 工作目录
 ```
@@ -56,10 +56,10 @@ tail -f webhook.log
 
 ```bash
 # Ubuntu/Debian
-sudo ufw allow 9000/tcp
+sudo ufw allow 9001/tcp
 
 # CentOS/RHEL
-sudo firewall-cmd --permanent --add-port=9000/tcp
+sudo firewall-cmd --permanent --add-port=9001/tcp
 sudo firewall-cmd --reload
 ```
 
@@ -67,7 +67,7 @@ sudo firewall-cmd --reload
 
 ```bash
 # 测试健康检查
-curl http://localhost:9000/health
+curl http://localhost:9001/health
 
 # 应该返回: OK
 ```
@@ -79,7 +79,7 @@ curl http://localhost:9000/health
 1. **在 GitHub 仓库中添加 Secrets**：
    - 进入仓库 Settings → Secrets and variables → Actions
    - 添加以下 secrets：
-     - `WEBHOOK_URL`: `http://your-server-ip:9000/webhook`
+     - `WEBHOOK_URL`: `http://your-server-ip:9001/webhook`
      - `WEBHOOK_SECRET`: 与服务器 `.env` 中相同的密码
 
 2. **GitHub Actions 会自动触发**：
@@ -93,7 +93,7 @@ curl http://localhost:9000/health
    - Settings → Webhooks → Add webhook
 
 2. **配置 Webhook**：
-   - **Payload URL**: `http://your-server-ip:9000/webhook`
+   - **Payload URL**: `http://your-server-ip:9001/webhook`
    - **Content type**: `application/json`
    - **Secret**: 与服务器 `.env` 中相同的密码
    - **Which events**: 选择 "Just the push event"
@@ -169,8 +169,8 @@ server {
 # https://api.github.com/meta
 
 # 示例（需要定期更新）
-sudo ufw allow from 140.82.112.0/20 to any port 9000
-sudo ufw allow from 143.55.64.0/20 to any port 9000
+sudo ufw allow from 140.82.112.0/20 to any port 9001
+sudo ufw allow from 143.55.64.0/20 to any port 9001
 ```
 
 ## 故障排除
@@ -186,7 +186,7 @@ sudo ufw allow from 143.55.64.0/20 to any port 9000
 2. **检查防火墙**：
    ```bash
    sudo ufw status
-   curl http://localhost:9000/health
+   curl http://localhost:9001/health
    ```
 
 3. **检查 GitHub Webhook 日志**：
@@ -287,7 +287,7 @@ sudo systemctl status opensqt-webhook
 ./quick_deploy.sh
 
 # 方法2：模拟 webhook 请求
-curl -X POST http://localhost:9000/webhook \
+curl -X POST http://localhost:9001/webhook \
   -H "Content-Type: application/json" \
   -d '{
     "ref": "refs/heads/main",
@@ -308,7 +308,7 @@ go build -o webhook_server ./cmd/webhook_server
 # 2. 配置环境变量
 cat >> .env << EOF
 WEBHOOK_SECRET=$(openssl rand -hex 32)
-WEBHOOK_PORT=9000
+WEBHOOK_PORT=9001
 DEPLOY_SCRIPT=./quick_deploy.sh
 WORK_DIR=.
 EOF
@@ -317,7 +317,7 @@ EOF
 ./start_webhook.sh
 
 # 4. 配置 GitHub Secrets
-# WEBHOOK_URL=http://your-server-ip:9000/webhook
+# WEBHOOK_URL=http://your-server-ip:9001/webhook
 # WEBHOOK_SECRET=<从 .env 复制>
 
 # 5. 测试

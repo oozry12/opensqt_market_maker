@@ -126,7 +126,7 @@ nano config.yaml   # 配置交易参数
 ```bash
 # Webhook 配置
 WEBHOOK_SECRET=your_strong_secret_here  # 生成强密码
-WEBHOOK_PORT=9000                        # 监听端口
+WEBHOOK_PORT=9001                        # 监听端口
 DEPLOY_SCRIPT=./quick_deploy.sh         # 部署脚本
 WORK_DIR=.                               # 工作目录
 ```
@@ -146,10 +146,10 @@ openssl rand -hex 32
 
 ```bash
 # Ubuntu/Debian
-sudo ufw allow 9000/tcp
+sudo ufw allow 9001/tcp
 
 # CentOS/RHEL
-sudo firewall-cmd --permanent --add-port=9000/tcp
+sudo firewall-cmd --permanent --add-port=9001/tcp
 sudo firewall-cmd --reload
 ```
 
@@ -158,7 +158,7 @@ sudo firewall-cmd --reload
 **1. 添加 Secrets**
 
 进入仓库 Settings → Secrets and variables → Actions，添加：
-- `WEBHOOK_URL`: `http://your-server-ip:9000/webhook`
+- `WEBHOOK_URL`: `http://your-server-ip:9001/webhook`
 - `WEBHOOK_SECRET`: 与服务器 `.env` 中相同的密码
 
 **2. 测试**
@@ -274,7 +274,7 @@ tail -f webhook.log
 **检查防火墙**：
 ```bash
 sudo ufw status
-curl http://localhost:9000/health
+curl http://localhost:9001/health
 ```
 
 **检查 GitHub Webhook**：
