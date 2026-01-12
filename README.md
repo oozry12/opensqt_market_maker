@@ -264,7 +264,7 @@ trading:
    echo "WEBHOOK_PORT=9001" >> .env
    
    # 重新部署并启用 Webhook
-   ./quick_deploy.sh --enable-webhook
+   ./quick_deploy.sh
    ```
 
 2. **配置 GitHub Secrets**

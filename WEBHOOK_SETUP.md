@@ -39,7 +39,7 @@ echo "WEBHOOK_SECRET=$(openssl rand -hex 32)" >> .env
 echo "WEBHOOK_PORT=9001" >> .env
 
 # 2. 部署并启用 Webhook
-./quick_deploy.sh --enable-webhook
+./quick_deploy.sh
 
 # 3. 配置防火墙
 sudo ufw allow 9001/tcp
@@ -174,7 +174,7 @@ GitHub Actions 触发
     ├─ git reset --hard origin/main
     └─ git pull
     ↓
-执行 quick_deploy.sh --enable-webhook
+执行 quick_deploy.sh（默认启用 Webhook）
     ↓
 下载最新二进制文件
     ↓

@@ -82,7 +82,7 @@ GitHub Actions 自动触发
          ↓
 验证签名 (HMAC-SHA256)
          ↓
-执行 quick_deploy.sh --enable-webhook
+执行 quick_deploy.sh（默认启用 Webhook）
          ↓
 下载最新的 tar.gz 文件
          ↓

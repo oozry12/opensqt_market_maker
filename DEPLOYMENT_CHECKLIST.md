@@ -68,7 +68,7 @@ GitHub Actions 编译
 🔧 设置脚本执行权限
     └─ chmod +x quick_deploy.sh
     ↓
-🚀 执行 quick_deploy.sh --enable-webhook
+🚀 执行 quick_deploy.sh（默认启用 Webhook）
     ├─ 下载最新二进制文件
     ├─ 解压文件
     ├─ 停止旧服务
@@ -130,7 +130,7 @@ echo "WEBHOOK_PORT=9001" >> .env
 echo "DEPLOY_DELAY=60" >> .env
 
 # 6. 重新部署并启用 Webhook
-./quick_deploy.sh --enable-webhook
+./quick_deploy.sh
 
 # 7. 配置防火墙
 sudo ufw allow 9001/tcp

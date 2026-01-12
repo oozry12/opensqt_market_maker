@@ -170,7 +170,7 @@ func executeDeploy(payload WebhookPayload) {
 
 	// 🔥 步骤3：执行部署脚本
 	log.Printf("🚀 开始执行部署脚本...")
-	cmd := exec.Command("/bin/bash", deployScript, "--enable-webhook")
+	cmd := exec.Command("/bin/bash", deployScript)
 	cmd.Dir = workDir
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("COMMIT_MESSAGE=%s", payload.HeadCommit.Message),

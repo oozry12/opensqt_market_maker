@@ -2,27 +2,28 @@
 
 # OpenSQT 快速部署脚本
 # 自动下载最新的二进制文件并启动
+# 默认启用 Webhook 自动部署服务器
 
 set -e
 
 # 解析命令行参数
-ENABLE_WEBHOOK=false
+DISABLE_WEBHOOK=false
 for arg in "$@"; do
     case $arg in
-        --enable-webhook)
-            ENABLE_WEBHOOK=true
+        --no-webhook)
+            DISABLE_WEBHOOK=true
             shift
             ;;
         --help)
             echo "用法: $0 [选项]"
             echo ""
             echo "选项:"
-            echo "  --enable-webhook    启用 Webhook 自动部署服务器"
-            echo "  --help              显示此帮助信息"
+            echo "  --no-webhook    禁用 Webhook 自动部署服务器"
+            echo "  --help          显示此帮助信息"
             echo ""
             echo "示例:"
-            echo "  $0                  # 仅部署和启动 Telegram Bot"
-            echo "  $0 --enable-webhook # 部署并启动 Webhook 服务器"
+            echo "  $0              # 部署并启动 Telegram Bot 和 Webhook 服务器"
+            echo "  $0 --no-webhook # 仅部署和启动 Telegram Bot"
             exit 0
             ;;
     esac
@@ -201,8 +202,11 @@ nohup ./telegram_bot > telegram_bot.log 2>&1 &
 
 sleep 2
 
-# 启动 Webhook 服务器（如果指定了 --enable-webhook 或之前在运行）
-if [ "$ENABLE_WEBHOOK" = true ] || [ "$WEBHOOK_WAS_RUNNING" = true ]; then
+# 启动 Webhook 服务器（默认启用，除非指定 --no-webhook 或之前未运行）
+# 逻辑：如果没有禁用 且 (之前在运行 或 首次部署)
+if [ "$DISABLE_WEBHOOK" = false ]; then
+    # 如果之前在运行，或者是首次部署（没有检测到之前的状态），都启动 webhook
+    if [ "$WEBHOOK_WAS_RUNNING" = true ] || [ "$WEBHOOK_WAS_RUNNING" = false ]; then
     echo "🔄 启动 Webhook 服务器..."
     
     # 检查 .env 文件

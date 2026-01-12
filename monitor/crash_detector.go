@@ -35,11 +35,12 @@ func (c CrashLevel) String() string {
 
 // ShortGridConfig 做空网格配置
 type ShortGridConfig struct {
-	Enabled       bool
-	KlineInterval string
-	KlineCount    int     // 检查K线数量（默认5）
-	MinMultiplier float64 // 最小倍数（默认1.2）
-	MaxMultiplier float64 // 最大倍数（默认3.0）
+	Enabled           bool
+	KlineInterval     string
+	KlineCount        int     // 检查K线数量（默认5）
+	MinMultiplier     float64 // 最小倍数（默认1.2）
+	MaxMultiplier     float64 // 最大倍数（默认3.0）
+	MaxShortPositions int     // 最大空仓数量（默认10）
 }
 
 // CrashDetector 开空检测器
@@ -111,16 +112,22 @@ func (d *CrashDetector) GetCrashLevel() CrashLevel {
 }
 
 // ShouldOpenShort 是否应该开空仓
-// 当前价格在做空区域内时返回true
+// 只要做空区域有效就返回true，允许预先挂空单
 func (d *CrashDetector) ShouldOpenShort() bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	if !d.cfg.Trading.CrashDetection.Enabled {
+		logger.Debug("🔍 [开空检测] 未启用")
 		return false
 	}
 
-	return d.shouldShort
+	// 只要锚点有效，就允许在做空区域挂空单
+	result := d.anchorHighest > 0 && d.shortZoneMin > 0
+	if !result {
+		logger.Debug("🔍 [开空检测] 锚点无效: anchor=%.6f, shortZoneMin=%.6f", d.anchorHighest, d.shortZoneMin)
+	}
+	return result
 }
 
 // GetShortZone 获取做空区域
@@ -129,6 +136,12 @@ func (d *CrashDetector) GetShortZone() (anchor, minPrice, maxPrice float64) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return d.anchorHighest, d.shortZoneMin, d.shortZoneMax
+}
+
+// GetMaxShortPositions 获取最大空仓数量
+func (d *CrashDetector) GetMaxShortPositions() int {
+	cfg := d.getConfig()
+	return cfg.MaxShortPositions
 }
 
 // GetCrashRate 获取当前价格与锚点的比例
@@ -156,15 +169,26 @@ func (d *CrashDetector) getConfig() ShortGridConfig {
 	cfg := d.cfg.Trading.CrashDetection
 
 	result := ShortGridConfig{
-		Enabled:       cfg.Enabled,
-		KlineInterval: cfg.KlineInterval,
-		KlineCount:    5,   // 固定检查5根K线
-		MinMultiplier: 1.2, // 最小1.2倍
-		MaxMultiplier: 3.0, // 最大3.0倍
+		Enabled:           cfg.Enabled,
+		KlineInterval:     cfg.KlineInterval,
+		KlineCount:        5,   // 固定检查5根K线
+		MinMultiplier:     cfg.ShortZoneMinMult,
+		MaxMultiplier:     cfg.ShortZoneMaxMult,
+		MaxShortPositions: cfg.MaxShortPositions,
 	}
 
+	// 设置默认值
 	if result.KlineInterval == "" {
-		result.KlineInterval = "5m" // 默认5分钟K线
+		result.KlineInterval = "5m"
+	}
+	if result.MinMultiplier <= 0 {
+		result.MinMultiplier = 1.2
+	}
+	if result.MaxMultiplier <= 0 {
+		result.MaxMultiplier = 3.0
+	}
+	if result.MaxShortPositions <= 0 {
+		result.MaxShortPositions = 10
 	}
 
 	return result
@@ -185,7 +209,8 @@ func (d *CrashDetector) loadHistoricalData() error {
 
 	d.detect()
 
-	logger.Info("✅ [开空检测] 已加载 %d 根历史K线", len(candles))
+	logger.Info("✅ [开空检测] 已加载 %d 根历史K线, 锚点:%.6f, 做空区域:[%.6f ~ %.6f]", 
+		len(candles), d.anchorHighest, d.shortZoneMin, d.shortZoneMax)
 	return nil
 }
 

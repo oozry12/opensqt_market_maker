@@ -57,13 +57,17 @@ type Config struct {
 		} `yaml:"downtrend_detection"`
 
 		CrashDetection struct {
-			Enabled         bool    `yaml:"enabled"`          // 是否启用暴跌检测（默认false）
-			MAWindow        int     `yaml:"ma_window"`        // 短期均线周期（默认20）
-			LongMAWindow    int     `yaml:"long_ma_window"`   // 长期均线周期（默认60）
-			MinUptrendCandles int   `yaml:"min_uptrend_candles"` // 最小连续上涨K线数（默认5）
-			MildCrashRate   float64 `yaml:"mild_crash_rate"`  // 轻度暴跌幅度（默认0.05即5%）
-			SevereCrashRate float64 `yaml:"severe_crash_rate"` // 严重暴跌幅度（默认0.10即10%）
-			KlineInterval   string  `yaml:"kline_interval"`   // K线周期（默认"1h"）
+			Enabled           bool    `yaml:"enabled"`             // 是否启用开空检测（默认false）
+			KlineInterval     string  `yaml:"kline_interval"`      // K线周期（默认"5m"）
+			ShortZoneMinMult  float64 `yaml:"short_zone_min_mult"` // 做空区域最小倍数（默认1.2）
+			ShortZoneMaxMult  float64 `yaml:"short_zone_max_mult"` // 做空区域最大倍数（默认3.0）
+			MaxShortPositions int     `yaml:"max_short_positions"` // 最大空仓数量（默认10）
+			// 以下配置已废弃，保留仅为兼容
+			MAWindow          int     `yaml:"ma_window"`
+			LongMAWindow      int     `yaml:"long_ma_window"`
+			MinUptrendCandles int     `yaml:"min_uptrend_candles"`
+			MildCrashRate     float64 `yaml:"mild_crash_rate"`
+			SevereCrashRate   float64 `yaml:"severe_crash_rate"`
 		} `yaml:"crash_detection"`
 	} `yaml:"trading"`
 

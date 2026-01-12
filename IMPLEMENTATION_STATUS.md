@@ -187,7 +187,7 @@ WEBHOOK_PORT=9001
 8. 🔧 设置脚本执行权限
    └─ chmod +x quick_deploy.sh
          ↓
-9. 🚀 执行 quick_deploy.sh --enable-webhook
+9. 🚀 执行 quick_deploy.sh（默认启用 Webhook）
    ├─ 下载最新二进制文件
    ├─ 解压文件
    ├─ 停止旧服务
@@ -376,7 +376,7 @@ nano .env
 # 添加 WEBHOOK_SECRET, WEBHOOK_PORT, DEPLOY_DELAY
 
 # 3. 启用 Webhook
-./quick_deploy.sh --enable-webhook
+./quick_deploy.sh
 
 # 4. 配置防火墙
 sudo ufw allow 9001/tcp

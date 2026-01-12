@@ -1607,7 +1607,7 @@ func (spm *SuperPositionManager) handleShortGrid(currentPrice float64, priceInte
 	logger.Debug("🔍 [做空网格] 锚点:%.6f, 做空区域:[%.6f ~ %.6f], 当前价格:%.6f",
 		anchor, shortZoneMin, shortZoneMax, currentPrice)
 
-	maxShortPositions := 10 // 最大空仓数量
+	maxShortPositions := spm.crashDetector.GetMaxShortPositions()
 
 	// 统计当前空仓数量
 	currentShortCount := 0
