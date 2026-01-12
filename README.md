@@ -155,13 +155,7 @@ opensqt_platform/
    ./opensqt config.yaml
    ```
 
-#### 方式二：直接运行源码
-
-```bash
-go run main.go config.yaml
-```
-
-#### 方式三：Telegram Bot 远程控制（推荐）
+#### 方式二：Telegram Bot 远程控制（推荐）
 
 1. **配置 Telegram Bot**
    
@@ -170,11 +164,15 @@ go run main.go config.yaml
    cp .env.example .env
    ```
    
-   编辑 `.env` 文件，填入 Telegram Bot 配置：
+   编辑 `.env` 文件，填入 Telegram Bot 配置和 API 密钥：
    ```bash
    # Telegram Bot 配置
    TELEGRAM_BOT_TOKEN=你的Bot Token
    TELEGRAM_ALLOWED_USERS=你的用户ID
+   
+   # 交易所 API 密钥
+   BINANCE_API_KEY=你的API Key
+   BINANCE_SECRET_KEY=你的Secret Key
    ```
 
 2. **启动 Telegram Bot**
@@ -198,7 +196,7 @@ go run main.go config.yaml
    - 📊 **实时监控**：接收交易成交、风控触发等关键事件通知
    - ⚙️ **配置管理**：通过聊天界面修改交易参数
 
-#### 方式四：使用启动脚本
+#### 方式三：使用启动脚本
 
 ```bash
 chmod +x scripts/start.sh

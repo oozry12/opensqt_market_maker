@@ -1,0 +1,17 @@
+[Unit]
+Description=OpenSQT Webhook Server
+After=network.target
+
+[Service]
+Type=simple
+User=your-username
+WorkingDirectory=/path/to/opensqt_market_maker
+Environment="WORK_DIR=/path/to/opensqt_market_maker"
+Environment="WEBHOOK_SECRET=your-webhook-secret"
+Environment="WEBHOOK_PORT=9000"
+ExecStart=/path/to/opensqt_market_maker/webhook_server
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
