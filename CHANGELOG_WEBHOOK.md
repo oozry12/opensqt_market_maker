@@ -78,6 +78,8 @@ GitHub Actions 自动触发
          ↓
 服务器 webhook_server 接收请求
          ↓
+⏰ 等待1分钟（确保编译完成）
+         ↓
 验证签名 (HMAC-SHA256)
          ↓
 执行 quick_deploy.sh

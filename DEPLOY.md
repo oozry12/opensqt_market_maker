@@ -204,12 +204,16 @@ GitHub Actions 编译
     ↓
 触发 Webhook
     ↓
+⏰ 等待1分钟
+    ↓
 服务器下载新版本
     ↓
 自动重启服务
     ↓
 部署完成 ✅
 ```
+
+**注意**：Webhook 收到后会等待1分钟，确保 GitHub Actions 编译完成。
 
 详细配置请参阅 [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md)
 

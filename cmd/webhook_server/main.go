@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // WebhookPayload GitHub webhook payload
@@ -30,6 +32,7 @@ var (
 	webhookSecret string
 	deployScript  string
 	workDir       string
+	deployDelay   int // 部署延迟时间（秒）
 )
 
 func main() {
@@ -38,6 +41,7 @@ func main() {
 	deployScript = os.Getenv("DEPLOY_SCRIPT")
 	workDir = os.Getenv("WORK_DIR")
 	port := os.Getenv("WEBHOOK_PORT")
+	delayStr := os.Getenv("DEPLOY_DELAY")
 
 	// 设置默认值
 	if deployScript == "" {
@@ -49,10 +53,20 @@ func main() {
 	if port == "" {
 		port = "9001"
 	}
+	if delayStr == "" {
+		deployDelay = 60 // 默认60秒
+	} else {
+		var err error
+		deployDelay, err = strconv.Atoi(delayStr)
+		if err != nil {
+			deployDelay = 60
+		}
+	}
 
 	log.Printf("🚀 Webhook 服务器启动中...")
 	log.Printf("📁 工作目录: %s", workDir)
 	log.Printf("📜 部署脚本: %s", deployScript)
+	log.Printf("⏰ 部署延迟: %d 秒", deployDelay)
 	log.Printf("🔐 Secret: %s", maskSecret(webhookSecret))
 	log.Printf("🌐 监听端口: %s", port)
 
@@ -126,6 +140,12 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 func executeDeploy(payload WebhookPayload) {
 	log.Printf("🚀 开始执行部署脚本...")
+	
+	if deployDelay > 0 {
+		log.Printf("⏰ 等待 %d 秒，确保 GitHub Actions 编译完成...", deployDelay)
+		time.Sleep(time.Duration(deployDelay) * time.Second)
+		log.Printf("✅ 等待完成，开始下载并部署...")
+	}
 
 	// 执行部署脚本
 	cmd := exec.Command("/bin/bash", deployScript)

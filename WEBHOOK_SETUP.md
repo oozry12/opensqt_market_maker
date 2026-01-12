@@ -74,7 +74,14 @@ WEBHOOK_SECRET=your_strong_secret_here  # 设置一个强密码
 WEBHOOK_PORT=9001                        # 监听端口
 DEPLOY_SCRIPT=./quick_deploy.sh         # 部署脚本路径
 WORK_DIR=.                               # 工作目录
+DEPLOY_DELAY=60                          # 部署延迟（秒），默认60秒
 ```
+
+**DEPLOY_DELAY 说明**：
+- Webhook 收到后会等待指定秒数再执行部署
+- 默认60秒，确保 GitHub Actions 编译完成
+- 可以根据实际编译时间调整（30-120秒）
+- 设置为0则立即执行（不推荐）
 
 ### 3. 启动 Webhook 服务器
 
@@ -155,6 +162,8 @@ GitHub Actions 触发
     ↓
 服务器接收 Webhook
     ↓
+⏰ 等待1分钟（确保编译完成）
+    ↓
 执行 quick_deploy.sh
     ↓
 下载最新二进制文件
@@ -167,6 +176,8 @@ GitHub Actions 触发
     ↓
 部署完成 ✅
 ```
+
+**注意**：Webhook 收到后会等待1分钟再执行部署，确保 GitHub Actions 已完成编译和发布。
 
 ## 安全建议
 
