@@ -85,6 +85,10 @@ func (m *MockExchange) GetHistoricalKlines(ctx context.Context, symbol string, i
 	return nil, nil
 }
 
+func (m *MockExchange) RegisterKlineCallback(name string, callback func(interface{})) error {
+	return nil
+}
+
 func (m *MockExchange) GetPriceDecimals() int {
 	return 4
 }

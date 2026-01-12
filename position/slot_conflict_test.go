@@ -99,15 +99,15 @@ func TestSlotConflictPrevention(t *testing.T) {
 
 	slot.mu.Lock()
 	slot.PositionQty = 10.0
-	slot.PositionStatus = PositionStatusLong
+	slot.PositionStatus = PositionStatusFilled
 	slot.SlotStatus = SlotStatusFree
 	slot.mu.Unlock()
 
 	fmt.Printf("买单成交后槽位状态: 价格=%.4f, 持仓状态=%s, 持仓数量=%.4f, 槽位状态=%s\n",
 		price, slot.PositionStatus, slot.PositionQty, slot.SlotStatus)
 
-	if slot.PositionStatus != PositionStatusLong {
-		t.Errorf("买单成交后持仓状态应该是 %s, 实际是 %s", PositionStatusLong, slot.PositionStatus)
+	if slot.PositionStatus != PositionStatusFilled {
+		t.Errorf("买单成交后持仓状态应该是 %s, 实际是 %s", PositionStatusFilled, slot.PositionStatus)
 	}
 
 	if slot.PositionQty <= 0 {
@@ -156,7 +156,7 @@ func TestSlotConflictPrevention(t *testing.T) {
 	fmt.Printf("槽位1: 价格=%.4f, 持仓状态=%s, 持仓数量=%.4f\n", price, slot1Status, slot1Qty)
 	fmt.Printf("槽位2: 价格=%.4f, 持仓状态=%s, 持仓数量=%.4f\n", price2, slot2Status, slot2Qty)
 
-	if slot1Status == PositionStatusLong && slot2Status == PositionStatusShort {
+	if slot1Status == PositionStatusFilled && slot2Status == PositionStatusShort {
 		fmt.Println("✅ 验证通过：不同槽位可以同时持有多仓和空仓，没有冲突")
 	} else {
 		t.Error("期望不同槽位可以同时持有多仓和空仓")
@@ -174,7 +174,7 @@ func TestSlotConflictPrevention(t *testing.T) {
 	slot3.mu.Lock()
 
 	slot3.PositionQty = 10.0
-	slot3.PositionStatus = PositionStatusLong
+	slot3.PositionStatus = PositionStatusFilled
 
 	fmt.Printf("槽位3开多仓后: 价格=%.4f, 持仓状态=%s, 持仓数量=%.4f\n", price3, slot3.PositionStatus, slot3.PositionQty)
 
@@ -349,11 +349,11 @@ func countOrdersBySide(executor *MockOrderExecutor) (buyCount, sellCount int) {
 func countSlotsByStatus(spm *SuperPositionManager) (longSlots, shortSlots, emptySlots int) {
 	spm.GetSlots().Range(func(key, value interface{}) bool {
 		slot := value.(*InventorySlot)
-		if slot.PositionStatus == "LONG" {
+		if slot.PositionStatus == PositionStatusFilled {
 			longSlots++
-		} else if slot.PositionStatus == "SHORT" {
+		} else if slot.PositionStatus == PositionStatusShort {
 			shortSlots++
-		} else if slot.PositionStatus == "EMPTY" {
+		} else if slot.PositionStatus == PositionStatusEmpty {
 			emptySlots++
 		}
 		return true

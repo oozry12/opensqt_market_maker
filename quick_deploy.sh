@@ -179,7 +179,7 @@ if pgrep -f telegram_bot > /dev/null; then
     echo ""
     echo "✅ 部署完成！"
     echo ""
-    echo "� 状态信息:""
+    echo "📊 状态信息:"
     echo "   - Telegram Bot PID: $PID"
     echo "   - 日志文件: telegram_bot.log"
     

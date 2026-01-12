@@ -112,7 +112,7 @@ func (d *CrashDetector) GetCrashLevel() CrashLevel {
 }
 
 // ShouldOpenShort 是否应该开空仓
-// 条件：单边上涨趋势 + 暴跌
+// 新逻辑：只要检测到暴跌即可，不再要求单边上涨趋势
 func (d *CrashDetector) ShouldOpenShort() bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -123,11 +123,8 @@ func (d *CrashDetector) ShouldOpenShort() bool {
 		return false
 	}
 
-	if d.currentLevel == CrashNone {
-		return false
-	}
-
-	return d.uptrendCandles >= cfg.MinUptrendCandles
+	// 只要检测到暴跌（轻度或严重）即可开空仓
+	return d.currentLevel != CrashNone
 }
 
 // GetCrashRate 获取暴跌幅度
@@ -297,12 +294,14 @@ func (d *CrashDetector) onCandleUpdate(candle *exchange.Candle) {
 }
 
 // detect 执行暴跌检测
+// 新逻辑：检测任意2根K线的平均跌幅是否大于阈值
 func (d *CrashDetector) detect() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	cfg := d.getConfigLocked()
 
+	// 只保留已关闭的K线
 	closedCandles := make([]*exchange.Candle, 0)
 	for _, c := range d.candles {
 		if c.IsClosed {
@@ -310,28 +309,63 @@ func (d *CrashDetector) detect() {
 		}
 	}
 
-	if len(closedCandles) < cfg.LongMAWindow {
+	// 至少需要2根K线才能计算跌幅
+	if len(closedCandles) < 2 {
 		return
 	}
 
-	var sum20, sum60 float64
-
-	startIdx20 := len(closedCandles) - cfg.MAWindow
-	for i := startIdx20; i < len(closedCandles); i++ {
-		sum20 += closedCandles[i].Close
+	// 计算均线（用于显示，不影响触发逻辑）
+	if len(closedCandles) >= cfg.MAWindow {
+		var sum20 float64
+		startIdx20 := len(closedCandles) - cfg.MAWindow
+		for i := startIdx20; i < len(closedCandles); i++ {
+			sum20 += closedCandles[i].Close
+		}
+		d.ma20 = sum20 / float64(cfg.MAWindow)
 	}
-	d.ma20 = sum20 / float64(cfg.MAWindow)
 
-	startIdx60 := len(closedCandles) - cfg.LongMAWindow
-	for i := startIdx60; i < len(closedCandles); i++ {
-		sum60 += closedCandles[i].Close
+	if len(closedCandles) >= cfg.LongMAWindow {
+		var sum60 float64
+		startIdx60 := len(closedCandles) - cfg.LongMAWindow
+		for i := startIdx60; i < len(closedCandles); i++ {
+			sum60 += closedCandles[i].Close
+		}
+		d.ma60 = sum60 / float64(cfg.LongMAWindow)
 	}
-	d.ma60 = sum60 / float64(cfg.LongMAWindow)
 
 	currentPrice := closedCandles[len(closedCandles)-1].Close
 
+	// 🔥 新逻辑：检测任意2根K线的平均跌幅
+	// 遍历最近的N根K线，找出任意2根K线的最大平均跌幅
+	maxAvgDropRate := 0.0
+	lookbackWindow := 10 // 检查最近10根K线
+	if len(closedCandles) < lookbackWindow {
+		lookbackWindow = len(closedCandles)
+	}
+
+	// 遍历所有可能的2根K线组合
+	for i := len(closedCandles) - lookbackWindow; i < len(closedCandles)-1; i++ {
+		for j := i + 1; j < len(closedCandles); j++ {
+			// 计算这2根K线的平均跌幅
+			// 跌幅 = (开盘价 - 收盘价) / 开盘价
+			drop1 := (closedCandles[i].Open - closedCandles[i].Close) / closedCandles[i].Open
+			drop2 := (closedCandles[j].Open - closedCandles[j].Close) / closedCandles[j].Open
+			
+			// 只考虑下跌的K线（收盘价 < 开盘价）
+			if drop1 > 0 && drop2 > 0 {
+				avgDropRate := (drop1 + drop2) / 2.0
+				if avgDropRate > maxAvgDropRate {
+					maxAvgDropRate = avgDropRate
+				}
+			}
+		}
+	}
+
+	d.crashRate = maxAvgDropRate
+
+	// 统计连续上涨K线数（用于显示，不影响触发逻辑）
 	d.uptrendCandles = 0
-	for i := len(closedCandles) - 2; i >= 0 && d.uptrendCandles < cfg.MinUptrendCandles+5; i-- {
+	for i := len(closedCandles) - 1; i >= 0 && d.uptrendCandles < cfg.MinUptrendCandles+5; i-- {
 		if closedCandles[i].Close > closedCandles[i].Open {
 			d.uptrendCandles++
 		} else {
@@ -339,48 +373,35 @@ func (d *CrashDetector) detect() {
 		}
 	}
 
-	d.crashRate = 0
-	if len(closedCandles) >= 2 {
-		prevHigh := closedCandles[len(closedCandles)-1].High
-		for i := len(closedCandles) - 2; i >= 0 && i >= len(closedCandles)-10; i-- {
-			if closedCandles[i].High > prevHigh {
-				prevHigh = closedCandles[i].High
-			}
-		}
-		d.crashRate = (prevHigh - currentPrice) / prevHigh
-	}
-
 	oldLevel := d.currentLevel
 
-	isUptrend := d.ma20 > d.ma60 && d.uptrendCandles >= cfg.MinUptrendCandles
-
-	if isUptrend {
-		if d.crashRate >= cfg.SevereCrashRate {
-			d.currentLevel = CrashSevere
-		} else if d.crashRate >= cfg.MildCrashRate {
-			d.currentLevel = CrashMild
-		} else {
-			d.currentLevel = CrashNone
-		}
+	// 🔥 简化触发条件：只要平均跌幅达到阈值即可
+	// 不再要求单边上涨趋势
+	if d.crashRate >= cfg.SevereCrashRate {
+		d.currentLevel = CrashSevere
+	} else if d.crashRate >= cfg.MildCrashRate {
+		d.currentLevel = CrashMild
 	} else {
 		d.currentLevel = CrashNone
 	}
 
 	d.lastDetectionTime = time.Now()
 
-	logger.Debug("🔍 [暴跌检测] 价格:%.4f, MA20:%.4f, MA60:%.4f, 上涨K线数:%d, 暴跌幅度:%.2f%%, 级别:%s",
-		currentPrice, d.ma20, d.ma60, d.uptrendCandles, d.crashRate*100, d.currentLevel.String())
+	// 调试日志
+	logger.Debug("🔍 [暴跌检测] 价格:%.4f, MA20:%.4f, MA60:%.4f, 最大平均跌幅:%.2f%%, 级别:%s",
+		currentPrice, d.ma20, d.ma60, d.crashRate*100, d.currentLevel.String())
 
+	// 状态变化时输出警告
 	if d.currentLevel != oldLevel {
 		switch d.currentLevel {
 		case CrashSevere:
-			logger.Warn("🔻🔻🔻 [暴跌检测] 严重暴跌！单边上涨后暴跌 %.2f%%，MA20:%.4f > MA60:%.4f",
-				d.crashRate*100, d.ma20, d.ma60)
+			logger.Warn("🔻🔻🔻 [暴跌检测] 严重暴跌！检测到2根K线平均跌幅 %.2f%%",
+				d.crashRate*100)
 		case CrashMild:
-			logger.Warn("🔻🔻 [暴跌检测] 轻度暴跌，跌幅 %.2f%%，MA20:%.4f > MA60:%.4f",
-				d.crashRate*100, d.ma20, d.ma60)
+			logger.Warn("🔻🔻 [暴跌检测] 轻度暴跌，检测到2根K线平均跌幅 %.2f%%",
+				d.crashRate*100)
 		case CrashNone:
-			logger.Info("✅ [暴跌检测] 无暴跌，MA20:%.4f, MA60:%.4f", d.ma20, d.ma60)
+			logger.Info("✅ [暴跌检测] 无暴跌，最大平均跌幅 %.2f%%", d.crashRate*100)
 		}
 	}
 }

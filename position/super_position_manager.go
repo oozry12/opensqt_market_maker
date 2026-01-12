@@ -1265,6 +1265,7 @@ func (spm *SuperPositionManager) initializeSellSlotsFromPosition(totalPosition f
 
 	// 4. 计算卖单槽位价格（从锚点价格 + 价格间隔开始）
 	// 卖单最低价 = 锚点价格 + 价格间隔（避免与买单最高价冲突）
+	// 注意：这里使用 calculateSlotPrices 的 "up" 方向，第一个价格就是 anchorPrice + interval
 	sellStartPrice := spm.anchorPrice + spm.config.Trading.PriceInterval
 	sellPrices := spm.calculateSlotPrices(sellStartPrice, totalSlotsNeeded, "up")
 
@@ -1596,6 +1597,15 @@ func formatPrice(price float64, decimals int) string {
 func (spm *SuperPositionManager) handleNeutralGrid(currentPrice float64, priceInterval float64, remainingOrders int, ordersToPlace *[]*OrderRequest) {
 	if !spm.config.Trading.NeutralGrid.Enabled {
 		return
+	}
+
+	// 🔥 新增：如果阴跌检测触发，禁用做空（避免逻辑冲突）
+	if spm.downtrendDetector != nil && spm.downtrendDetector.IsEnabled() {
+		level := spm.downtrendDetector.GetDowntrendLevel()
+		if level != monitor.DowntrendNone {
+			logger.Debug("🔍 [中性网格] 阴跌检测已触发(%s)，禁用做空以保持策略一致性", level.String())
+			return
+		}
 	}
 
 	// 检查是否应该开空仓（需要暴跌检测器确认）
