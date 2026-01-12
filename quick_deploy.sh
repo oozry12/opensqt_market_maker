@@ -142,11 +142,8 @@ nohup ./telegram_bot > telegram_bot.log 2>&1 &
 
 sleep 2
 
-# 启动 Webhook 服务器（默认启用，除非指定 --no-webhook 或之前未运行）
-# 逻辑：如果没有禁用 且 (之前在运行 或 首次部署)
+# 启动 Webhook 服务器（默认启用，除非指定 --no-webhook）
 if [ "$DISABLE_WEBHOOK" = false ]; then
-    # 如果之前在运行，或者是首次部署（没有检测到之前的状态），都启动 webhook
-    if [ "$WEBHOOK_WAS_RUNNING" = true ] || [ "$WEBHOOK_WAS_RUNNING" = false ]; then
     echo "🔄 启动 Webhook 服务器..."
     
     # 检查 .env 文件
