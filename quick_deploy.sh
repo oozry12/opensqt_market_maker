@@ -26,7 +26,7 @@ esac
 echo "📋 检测到系统架构: $ARCH (Go: $GOARCH)"
 
 # 下载地址
-DOWNLOAD_URL="https://github.com/dennisyang1986/opensqt_market_maker/releases/download/latest/opensqt-linux-${GOARCH}.tar.gz"
+DOWNLOAD_URL="https://github.com/oozry12/opensqt_market_maker/releases/download/latest/opensqt-linux-${GOARCH}.tar.gz"
 
 echo "📥 正在下载最新版本..."
 echo "🔗 下载地址: $DOWNLOAD_URL"
