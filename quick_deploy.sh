@@ -6,6 +6,9 @@
 
 set -e
 
+# 检测是否由 webhook 调用（通过环境变量）
+CALLED_BY_WEBHOOK=${CALLED_BY_WEBHOOK:-false}
+
 # 解析命令行参数
 DISABLE_WEBHOOK=false
 for arg in "$@"; do
@@ -30,6 +33,9 @@ for arg in "$@"; do
 done
 
 echo "🚀 OpenSQT 快速部署脚本"
+if [ "$CALLED_BY_WEBHOOK" = "true" ]; then
+    echo "📡 由 Webhook 触发的自动部署"
+fi
 echo ""
 
 # 检测系统架构
@@ -128,12 +134,17 @@ if pgrep -f telegram_bot > /dev/null; then
 fi
 
 # 停止旧的 Webhook 服务器（如果在运行）
+# 🔥 如果是由 webhook 调用的，不要停止 webhook_server（避免自杀）
 WEBHOOK_WAS_RUNNING=false
-if pgrep -f webhook_server > /dev/null; then
-    echo "🛑 停止旧的 Webhook 服务器..."
-    WEBHOOK_WAS_RUNNING=true
-    pkill -f webhook_server
-    sleep 2
+if [ "$CALLED_BY_WEBHOOK" != "true" ]; then
+    if pgrep -f webhook_server > /dev/null; then
+        echo "🛑 停止旧的 Webhook 服务器..."
+        WEBHOOK_WAS_RUNNING=true
+        pkill -f webhook_server
+        sleep 2
+    fi
+else
+    echo "ℹ️ 由 Webhook 触发，跳过 Webhook 服务器重启"
 fi
 
 # 启动 Telegram Bot
