@@ -60,7 +60,7 @@ exchanges:
 trading:
   symbol: "DOGEUSDC"
   price_interval: 0.0001       # 价格间隔（更密集的网格）
-  order_quantity: 8             # 每单购买金额（USDT/USDC）如 12 表示每单投入12U
+  order_quantity: 24             # 每单购买金额（USDT/USDC）如 12 表示每单投入12U
   min_order_value: 6            # 最小订单价值（USDT），小于此值不挂单（默认20U）
   # 注意：price_decimals 和 quantity_decimals 已移除，现在从交易所自动获取
   
