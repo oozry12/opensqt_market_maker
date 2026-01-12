@@ -106,6 +106,9 @@ type InventorySlot struct {
 	// 🔥 新增：槽位锁定状态，防止并发重复操作
 	SlotStatus string // FREE/PENDING/LOCKED
 
+	// 🔥 新增：是否为做空网格的槽位（用于区分空单和普通卖单）
+	IsShortGrid bool // true=做空网格槽位，false=普通做多网格槽位
+
 	// PostOnly失败计数（连续失败3次后降级为普通单）
 	PostOnlyFailCount int
 
@@ -894,8 +897,16 @@ func (spm *SuperPositionManager) OnOrderUpdate(update OrderUpdate) {
 				slot.SlotStatus = SlotStatusFree // 允许重新挂买单
 			}
 		} else if side == "SELL" {
-			// 卖单被取消/拒绝：应该还持有币，保持持仓状态
-			if slot.PositionQty > 0 {
+			// 卖单被取消/拒绝
+			if slot.IsShortGrid {
+				// 🔥 做空网格的空单被取消：保持 IsShortGrid 标记，防止重复下单
+				logger.Info("🔄 [空单取消] 价格: %s, 保持做空标记（防止重复下单）",
+					formatPrice(price, spm.priceDecimals))
+				slot.PositionStatus = PositionStatusEmpty
+				slot.SlotStatus = SlotStatusFree
+				// 🔥 不重置 IsShortGrid，这样下次不会重复创建空单
+			} else if slot.PositionQty > 0 {
+				// 普通卖单（平多仓）被取消：应该还持有币，保持持仓状态
 				// 增加PostOnly失败计数（订单被交易所撤销通常是PostOnly失败）
 				slot.PostOnlyFailCount++
 				logger.Info("🔄 [卖单取消] 价格: %s, 保持持仓状态: %.4f, 等待重挂, PostOnly失败计数: %d",
@@ -1644,10 +1655,13 @@ func (spm *SuperPositionManager) handleShortGrid(currentPrice float64, priceInte
 		slot := spm.getOrCreateSlot(slotPrice)
 		slot.mu.Lock()
 
+		// 🔥 检查槽位是否可以创建空单
+		// 条件：空仓、空闲、无订单、且不是已经尝试过做空的槽位
 		if slot.PositionStatus == PositionStatusEmpty &&
 			slot.SlotStatus == SlotStatusFree &&
 			slot.OrderID == 0 &&
-			slot.ClientOID == "" {
+			slot.ClientOID == "" &&
+			!slot.IsShortGrid { // 🔥 排除已经标记为做空的槽位（防止重复下单）
 
 			quantity := spm.config.Trading.OrderQuantity / slotPrice
 			quantity = roundPrice(quantity, spm.quantityDecimals)
@@ -1680,6 +1694,7 @@ func (spm *SuperPositionManager) handleShortGrid(currentPrice float64, priceInte
 		}
 
 		slot.SlotStatus = SlotStatusPending
+		slot.IsShortGrid = true // 🔥 标记为做空网格槽位
 		usePostOnly := slot.PostOnlyFailCount < 3
 		slot.mu.Unlock()
 

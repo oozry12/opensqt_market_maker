@@ -91,7 +91,8 @@ func (d *CrashDetector) Start(ctx context.Context) error {
 	go d.subscribeKlineStream()
 
 	cfg := d.getConfig()
-	logger.Info("✅ [开空检测] 已启动 - 锚点区域: %.1f倍 ~ %.1f倍", cfg.MinMultiplier, cfg.MaxMultiplier)
+	logger.Info("✅ [开空检测] 已启动 - 配置: 锚点区域 %.4f倍 ~ %.4f倍, 最大空仓 %d",
+		cfg.MinMultiplier, cfg.MaxMultiplier, cfg.MaxShortPositions)
 	return nil
 }
 
@@ -177,19 +178,27 @@ func (d *CrashDetector) getConfig() ShortGridConfig {
 		MaxShortPositions: cfg.MaxShortPositions,
 	}
 
+	// 调试：打印从配置文件读取的原始值
+	logger.Debug("🔧 [开空配置] 原始值: MinMult=%.6f, MaxMult=%.6f, MaxPos=%d",
+		cfg.ShortZoneMinMult, cfg.ShortZoneMaxMult, cfg.MaxShortPositions)
+
 	// 设置默认值
 	if result.KlineInterval == "" {
 		result.KlineInterval = "5m"
 	}
 	if result.MinMultiplier <= 0 {
 		result.MinMultiplier = 1.2
+		logger.Debug("🔧 [开空配置] MinMultiplier使用默认值: %.2f", result.MinMultiplier)
 	}
 	if result.MaxMultiplier <= 0 {
 		result.MaxMultiplier = 3.0
+		logger.Debug("🔧 [开空配置] MaxMultiplier使用默认值: %.2f", result.MaxMultiplier)
 	}
 	if result.MaxShortPositions <= 0 {
 		result.MaxShortPositions = 10
 	}
+
+	logger.Debug("🔧 [开空配置] 最终值: MinMult=%.6f, MaxMult=%.6f", result.MinMultiplier, result.MaxMultiplier)
 
 	return result
 }

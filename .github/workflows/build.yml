@@ -149,23 +149,49 @@ jobs:
     - name: Trigger webhook deployment
       if: success()
       continue-on-error: true
+      env:
+        WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
       run: |
-        if [ -n "${{ secrets.WEBHOOK_URL }}" ]; then
+        if [ -n "$WEBHOOK_URL" ]; then
           echo "📡 触发 Webhook 部署..."
-          curl -X POST "${{ secrets.WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -H "X-Hub-Signature-256: sha256=$(echo -n '${{ github.sha }}' | openssl dgst -sha256 -hmac '${{ secrets.WEBHOOK_SECRET }}' | sed 's/^.* //')" \
-            -d '{
-              "ref": "${{ github.ref }}",
-              "repository": {
-                "full_name": "${{ github.repository }}"
-              },
-              "head_commit": {
-                "message": "${{ github.event.head_commit.message }}",
-                "id": "${{ github.sha }}"
-              }
-            }'
-          echo "✅ Webhook 已触发"
+          
+          # 构建 JSON payload
+          PAYLOAD=$(cat <<EOF
+        {
+          "ref": "${{ github.ref }}",
+          "repository": {
+            "full_name": "${{ github.repository }}"
+          },
+          "head_commit": {
+            "message": "Auto deploy from GitHub Actions",
+            "id": "${{ github.sha }}"
+          }
+        }
+        EOF
+        )
+          
+          # 计算签名（使用完整的 payload）
+          if [ -n "$WEBHOOK_SECRET" ]; then
+            SIGNATURE="sha256=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | sed 's/^.* //')"
+            echo "🔐 使用签名验证"
+            curl -X POST "$WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -H "X-Hub-Signature-256: $SIGNATURE" \
+              -d "$PAYLOAD" \
+              --max-time 10 \
+              -v
+          else
+            echo "⚠️ 未配置 WEBHOOK_SECRET，不使用签名"
+            curl -X POST "$WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD" \
+              --max-time 10 \
+              -v
+          fi
+          
+          echo ""
+          echo "✅ Webhook 请求已发送"
         else
-          echo "ℹ️ 未配置 WEBHOOK_URL，跳过"
+          echo "ℹ️ 未配置 WEBHOOK_URL，跳过 Webhook 触发"
         fi

@@ -110,9 +110,18 @@ func (oc *OrderCleaner) CleanupOrders() {
 			return 0
 		}
 
+		getBoolField := func(name string) bool {
+			field := v.FieldByName(name)
+			if field.IsValid() && field.Kind() == reflect.Bool {
+				return field.Bool()
+			}
+			return false
+		}
+
 		orderID := getInt64Field("OrderID")
 		orderSide := getStringField("OrderSide")
 		orderStatus := getStringField("OrderStatus")
+		isShortGrid := getBoolField("IsShortGrid")
 
 		// 🔥 修复：排除部分成交的订单（PARTIALLY_FILLED不能撤销，会造成资金悬空）
 		if orderStatus == OrderStatusPlaced || orderStatus == OrderStatusConfirmed {
@@ -123,10 +132,13 @@ func (oc *OrderCleaner) CleanupOrders() {
 					OrderID int64
 				}{Price: price, OrderID: orderID})
 			} else if orderSide == "SELL" {
-				sellOrders = append(sellOrders, struct {
-					Price   float64
-					OrderID int64
-				}{Price: price, OrderID: orderID})
+				// 🔥 排除做空网格的卖单（空单），只清理普通卖单（平多仓）
+				if !isShortGrid {
+					sellOrders = append(sellOrders, struct {
+						Price   float64
+						OrderID int64
+					}{Price: price, OrderID: orderID})
+				}
 			}
 		}
 		return true
