@@ -147,12 +147,12 @@ func (b *Bot) sendHelp(chatID int64) {
 	help := `🤖 *OpenSQT 交易控制*
 
 *交易控制:*
-/run - 启动交易程序 (go run main.go)
+/run - 启动交易程序 (Docker容器)
 /stop - 停止交易程序
 /restart - 重启交易程序
 /status - 查看运行状态
 /logs - 查看最近日志
-/update - 拉取代码更新 (git pull)
+/update - 拉取最新Docker镜像并重新部署
 
 *配置管理:*
 /panel - 打开配置面板（推荐）
@@ -200,78 +200,64 @@ func (b *Bot) sendWelcomePanel(chatID int64) {
 	b.api.Send(msg)
 }
 
-// startTrading 启动交易程序
+// startTrading 启动交易程序（Docker版本）
 func (b *Bot) startTrading(chatID int64) {
 	b.tradingMu.Lock()
 	defer b.tradingMu.Unlock()
 
-	if b.isRunning {
+	// 检查交易容器是否已在运行
+	if b.isDockerContainerRunning("opensqt-trading") {
 		b.sendMessage(chatID, "⚠️ 交易程序已在运行中")
 		return
 	}
 
-	// 检查是否有手动启动的进程
-	isRunning, pid := b.checkTradingProcess()
-	if isRunning {
-		b.sendMessage(chatID, fmt.Sprintf("⚠️ 交易程序已在运行中 (手动启动, PID: %d)\n请先使用 /stop 停止现有进程", pid))
-		return
-	}
+	b.sendMessage(chatID, "📥 正在拉取最新镜像...")
 
-	b.sendMessage(chatID, "📥 正在拉取最新代码...")
-
-	pullCmd := exec.Command("git", "pull")
+	// 拉取最新镜像
+	pullCmd := exec.Command("docker", "pull", "ghcr.io/dennisyang1986/opensqt:latest")
 	pullCmd.Dir = b.workDir
 	pullOutput, err := pullCmd.CombinedOutput()
 	
 	if err != nil {
-		b.sendMessage(chatID, fmt.Sprintf("⚠️ Git pull 失败，继续启动:\n```\n%s\n```", string(pullOutput)))
+		b.sendMessage(chatID, fmt.Sprintf("⚠️ 拉取镜像失败，使用本地镜像:\n```\n%s\n```", string(pullOutput)))
 	} else {
-		b.sendMessage(chatID, fmt.Sprintf("✅ Git pull 完成:\n```\n%s\n```", string(pullOutput)))
+		b.sendMessage(chatID, "✅ 镜像拉取完成")
 	}
 
 	b.sendMessage(chatID, "🚀 正在启动交易程序...")
 
-	// 构建配置文件路径
-	configPath := b.configPath
-	if !filepath.IsAbs(configPath) {
-		configPath = filepath.Join(b.workDir, configPath)
-	}
-
 	// 检查配置文件是否存在
+	configPath := filepath.Join(b.workDir, "config.yaml")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		b.sendMessage(chatID, fmt.Sprintf("❌ 配置文件不存在: %s", configPath))
 		return
 	}
 
-	// 检查 main.go 是否存在
-	mainFile := filepath.Join(b.workDir, "main.go")
-	if _, err := os.Stat(mainFile); os.IsNotExist(err) {
-		b.sendMessage(chatID, fmt.Sprintf("❌ main.go 不存在: %s", mainFile))
+	// 检查.env文件是否存在
+	envPath := filepath.Join(b.workDir, ".env")
+	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+		b.sendMessage(chatID, fmt.Sprintf("❌ .env文件不存在: %s", envPath))
 		return
 	}
 
-	// 使用 go run main.go 启动
-	cmd := exec.Command("go", "run", "main.go", configPath)
+	// 使用 docker run 启动交易容器
+	cmd := exec.Command("docker", "run", "-d",
+		"--name", "opensqt-trading",
+		"--restart", "unless-stopped",
+		"--network", "opensqt_opensqt-network",
+		"-v", fmt.Sprintf("%s/config.yaml:/app/config.yaml:ro", b.workDir),
+		"-v", fmt.Sprintf("%s/logs:/app/logs", b.workDir),
+		"--env-file", fmt.Sprintf("%s/.env", b.workDir),
+		"ghcr.io/dennisyang1986/opensqt:latest",
+		"config.yaml")
 	cmd.Dir = b.workDir
 
-	// 获取输出管道
-	stdout, err := cmd.StdoutPipe()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		b.sendMessage(chatID, fmt.Sprintf("❌ 获取输出管道失败: %v", err))
-		return
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		b.sendMessage(chatID, fmt.Sprintf("❌ 获取错误管道失败: %v", err))
+		b.sendMessage(chatID, fmt.Sprintf("❌ 启动失败: %v\n输出: %s", err, string(output)))
 		return
 	}
 
-	if err := cmd.Start(); err != nil {
-		b.sendMessage(chatID, fmt.Sprintf("❌ 启动失败: %v", err))
-		return
-	}
-
-	b.tradingCmd = cmd
 	b.isRunning = true
 	b.startTime = time.Now()
 	b.notifyChat = chatID
@@ -281,72 +267,42 @@ func (b *Bot) startTrading(chatID int64) {
 	b.logBuffer = make([]string, 0, 100)
 	b.logMu.Unlock()
 
-	// 捕获输出
-	go b.readOutput(stdout, chatID)
-	go b.readOutput(stderr, chatID)
+	// 启动日志监控
+	go b.monitorDockerLogs("opensqt-trading", chatID)
 
-	// 监控进程退出
-	go b.watchProcess(chatID)
-
-	b.sendMessage(chatID, fmt.Sprintf("✅ 交易程序已启动\n📁 目录: %s\n⚙️ 配置: %s\n🚀 命令: go run main.go", b.workDir, configPath))
+	containerID := strings.TrimSpace(string(output))
+	b.sendMessage(chatID, fmt.Sprintf("✅ 交易程序已启动\n📁 目录: %s\n⚙️ 配置: config.yaml\n🐳 容器ID: %s", b.workDir, containerID[:12]))
 }
 
-// stopTrading 停止交易程序
+// stopTrading 停止交易程序（Docker版本）
 func (b *Bot) stopTrading(chatID int64) {
 	b.tradingMu.Lock()
 	defer b.tradingMu.Unlock()
 
-	if b.isRunning && b.tradingCmd != nil {
-		b.sendMessage(chatID, "🛑 正在停止交易程序...")
-
-		// 发送中断信号（优雅关闭）
-		if err := b.tradingCmd.Process.Signal(os.Interrupt); err != nil {
-			// 如果发送信号失败，直接 Kill
-			b.tradingCmd.Process.Kill()
-		}
-
-		// 等待进程退出（最多15秒）
-		done := make(chan error, 1)
-		go func() {
-			done <- b.tradingCmd.Wait()
-		}()
-
-		select {
-		case <-done:
-			b.sendMessage(chatID, "✅ 交易程序已停止")
-		case <-time.After(15 * time.Second):
-			b.tradingCmd.Process.Kill()
-			b.sendMessage(chatID, "⚠️ 强制终止交易程序")
-		}
-
-		b.isRunning = false
-		b.tradingCmd = nil
+	// 检查容器是否在运行
+	if !b.isDockerContainerRunning("opensqt-trading") {
+		b.sendMessage(chatID, "⚠️ 交易程序未运行")
 		return
 	}
 
-	// 检查是否有手动启动的进程
-	isRunning, pid := b.checkTradingProcess()
-	if isRunning {
-		b.sendMessage(chatID, fmt.Sprintf("🛑 正在停止手动启动的交易程序 (PID: %d)...", pid))
+	b.sendMessage(chatID, "🛑 正在停止交易程序...")
 
-		var cmd *exec.Cmd
-		if runtime.GOOS == "windows" {
-			cmd = exec.Command("taskkill", "/F", "/PID", strconv.Itoa(pid))
-		} else {
-			cmd = exec.Command("kill", "-9", strconv.Itoa(pid))
-		}
-
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			b.sendMessage(chatID, fmt.Sprintf("⚠️ 停止进程失败: %v\n输出: %s", err, string(output)))
-			return
-		}
-
-		b.sendMessage(chatID, "✅ 交易程序已停止")
+	// 优雅停止容器
+	stopCmd := exec.Command("docker", "stop", "opensqt-trading")
+	stopOutput, err := stopCmd.CombinedOutput()
+	if err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("⚠️ 停止容器失败: %v\n输出: %s", err, string(stopOutput)))
 		return
 	}
 
-	b.sendMessage(chatID, "⚠️ 交易程序未运行")
+	// 删除容器
+	rmCmd := exec.Command("docker", "rm", "opensqt-trading")
+	rmCmd.Run() // 忽略错误，容器可能已经被删除
+
+	b.isRunning = false
+	b.tradingCmd = nil
+
+	b.sendMessage(chatID, "✅ 交易程序已停止")
 }
 
 // restartTrading 重启交易程序
@@ -384,42 +340,40 @@ func (b *Bot) restartTrading(chatID int64) {
 	b.startTrading(chatID)
 }
 
-// sendStatus 发送状态信息
+// sendStatus 发送状态信息（Docker版本）
 func (b *Bot) sendStatus(chatID int64) {
 	b.tradingMu.Lock()
 	defer b.tradingMu.Unlock()
 
 	var status string
-	if b.isRunning {
-		uptime := time.Since(b.startTime).Round(time.Second)
-		pid := 0
-		if b.tradingCmd != nil && b.tradingCmd.Process != nil {
-			pid = b.tradingCmd.Process.Pid
+	exists, containerStatus, containerID := b.getDockerContainerStatus("opensqt-trading")
+	
+	if exists && strings.Contains(containerStatus, "Up") {
+		uptime := ""
+		if b.isRunning {
+			uptime = time.Since(b.startTime).Round(time.Second).String()
 		}
-		status = fmt.Sprintf(`✅ *交易程序运行中* (Bot 启动)
+		
+		status = fmt.Sprintf(`✅ *交易程序运行中* (Docker容器)
 
-⏱ 运行时间: %v
-🔢 进程PID: %d
+⏱ 运行时间: %s
+🐳 容器ID: %s
+📊 容器状态: %s
 📁 工作目录: %s
-⚙️ 配置文件: %s
-🚀 启动命令: go run main.go`, uptime, pid, b.workDir, b.configPath)
+⚙️ 配置文件: %s`, uptime, containerID[:12], containerStatus, b.workDir, b.configPath)
+	} else if exists {
+		status = fmt.Sprintf(`❌ *交易程序已停止* (Docker容器)
+
+🐳 容器ID: %s
+📊 容器状态: %s
+📁 工作目录: %s
+⚙️ 配置文件: %s`, containerID[:12], containerStatus, b.workDir, b.configPath)
 	} else {
-		isRunning, pid := b.checkTradingProcess()
-		if isRunning {
-			status = fmt.Sprintf(`✅ *交易程序运行中* (手动启动)
+		status = fmt.Sprintf(`❌ *交易程序未运行*
 
-🔢 进程PID: %d
 📁 工作目录: %s
 ⚙️ 配置文件: %s
-🚀 启动方式: 手动启动
-
-⚠️ 注意: Bot 无法控制手动启动的进程，请手动停止`, pid, b.workDir, b.configPath)
-		} else {
-			status = fmt.Sprintf(`❌ *交易程序未运行*
-
-📁 工作目录: %s
-⚙️ 配置文件: %s`, b.workDir, b.configPath)
-		}
+🐳 Docker镜像: ghcr.io/dennisyang1986/opensqt:latest`, b.workDir, b.configPath)
 	}
 
 	msg := tgbotapi.NewMessage(chatID, status)
@@ -553,62 +507,66 @@ func (b *Bot) Stop() {
 	b.api.StopReceivingUpdates()
 }
 
-// checkTradingProcess 检查交易程序进程是否正在运行
-// 返回：是否运行，进程ID
-func (b *Bot) checkTradingProcess() (bool, int) {
-	var cmd *exec.Cmd
-	var processName string
-
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("tasklist", "/FI", "IMAGENAME eq "+b.exeName, "/FO", "CSV")
-		processName = b.exeName
-	} else {
-		cmd = exec.Command("pgrep", "-f", "opensqt")
-		processName = "opensqt"
-	}
-
+// isDockerContainerRunning 检查Docker容器是否在运行
+func (b *Bot) isDockerContainerRunning(containerName string) bool {
+	cmd := exec.Command("docker", "ps", "--filter", fmt.Sprintf("name=%s", containerName), "--format", "{{.Names}}")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return false, 0
+		return false
 	}
-
-	outputStr := string(output)
-
-	if runtime.GOOS == "windows" {
-		if strings.Contains(outputStr, processName) && !strings.Contains(outputStr, "No tasks are running") {
-			lines := strings.Split(outputStr, "\n")
-			for _, line := range lines {
-				if strings.Contains(line, processName) {
-					fields := strings.Split(line, ",")
-					if len(fields) >= 2 {
-						pidStr := strings.Trim(fields[1], "\"")
-						pid, err := strconv.Atoi(pidStr)
-						if err == nil && pid > 0 {
-							return true, pid
-						}
-					}
-				}
-			}
-		}
-	} else {
-		if len(strings.TrimSpace(outputStr)) > 0 {
-			pids := strings.Fields(outputStr)
-			if len(pids) > 0 {
-				pid, err := strconv.Atoi(pids[0])
-				if err == nil && pid > 0 {
-					return true, pid
-				}
-			}
-		}
-	}
-
-	return false, 0
+	return strings.Contains(string(output), containerName)
 }
 
-// gitPullAndRebuild 拉取更新
+// monitorDockerLogs 监控Docker容器日志
+func (b *Bot) monitorDockerLogs(containerName string, chatID int64) {
+	cmd := exec.Command("docker", "logs", "-f", containerName)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		logger.Warn("⚠️ 获取Docker日志管道失败: %v", err)
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		logger.Warn("⚠️ 启动Docker日志监控失败: %v", err)
+		return
+	}
+
+	// 读取日志输出
+	b.readOutput(stdout, chatID)
+
+	// 等待命令结束
+	cmd.Wait()
+}
+
+// getDockerContainerStatus 获取Docker容器状态
+func (b *Bot) getDockerContainerStatus(containerName string) (bool, string, string) {
+	cmd := exec.Command("docker", "ps", "-a", "--filter", fmt.Sprintf("name=%s", containerName), "--format", "{{.Status}}\t{{.ID}}")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, "", ""
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) == 0 || lines[0] == "" {
+		return false, "", ""
+	}
+
+	parts := strings.Split(lines[0], "\t")
+	if len(parts) < 2 {
+		return false, "", ""
+	}
+
+	status := parts[0]
+	containerID := parts[1]
+	isRunning := strings.Contains(status, "Up")
+
+	return true, status, containerID
+}
+
+// gitPullAndRebuild 拉取更新并重新部署（Docker版本）
 func (b *Bot) gitPullAndRebuild(chatID int64) {
 	b.tradingMu.Lock()
-	wasRunning := b.isRunning
+	wasRunning := b.isDockerContainerRunning("opensqt-trading")
 	b.tradingMu.Unlock()
 
 	// 如果正在运行，先停止
@@ -618,46 +576,58 @@ func (b *Bot) gitPullAndRebuild(chatID int64) {
 		time.Sleep(2 * time.Second)
 	}
 
-	b.sendMessage(chatID, "📥 正在拉取更新...")
+	b.sendMessage(chatID, "📥 正在拉取最新Docker镜像...")
 
-	// git pull
-	pullCmd := exec.Command("git", "pull")
-	pullCmd.Dir = b.workDir
-	pullOutput, err := pullCmd.CombinedOutput()
+	// 拉取最新的主程序镜像
+	pullMainCmd := exec.Command("docker", "pull", "ghcr.io/dennisyang1986/opensqt:latest")
+	pullMainCmd.Dir = b.workDir
+	pullMainOutput, err := pullMainCmd.CombinedOutput()
 	
 	if err != nil {
-		b.sendMessage(chatID, fmt.Sprintf("❌ Git pull 失败:\n```\n%s\n```", string(pullOutput)))
+		b.sendMessage(chatID, fmt.Sprintf("❌ 拉取主程序镜像失败:\n```\n%s\n```", string(pullMainOutput)))
 		return
 	}
 
-	b.sendMessage(chatID, fmt.Sprintf("✅ Git pull 完成:\n```\n%s\n```", string(pullOutput)))
+	b.sendMessage(chatID, "✅ 主程序镜像更新完成")
+
+	// 拉取最新的Telegram Bot镜像
+	b.sendMessage(chatID, "� 正在拉取T程elegram Bot镜像...")
+	pullBotCmd := exec.Command("docker", "pull", "ghcr.io/dennisyang1986/opensqt-telegram:latest")
+	pullBotCmd.Dir = b.workDir
+	pullBotOutput, err := pullBotCmd.CombinedOutput()
+	
+	if err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ 拉取Telegram Bot镜像失败:\n```\n%s\n```", string(pullBotOutput)))
+		return
+	}
+
+	b.sendMessage(chatID, "✅ Telegram Bot镜像更新完成")
+
+	// 如果之前在运行，自动重新启动交易程序
+	if wasRunning {
+		time.Sleep(2 * time.Second)
+		b.sendMessage(chatID, "🚀 自动重新启动交易程序...")
+		b.startTrading(chatID)
+	}
 
 	b.sendMessage(chatID, "🔄 正在重启 Telegram Bot...")
 
 	// 延迟一下，确保消息发送完成
 	time.Sleep(2 * time.Second)
 
-	// 重启 Telegram Bot
-	var restartCmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		restartCmd = exec.Command("powershell", "-Command", "Start-Process", "-FilePath", "go", "-ArgumentList", "run", "./cmd/telegram_bot/main.go", "-NoNewWindow")
-		restartCmd.Dir = b.workDir
-	} else {
-		restartCmd = exec.Command("nohup", "go", "run", "./cmd/telegram_bot/main.go", "&")
-		restartCmd.Dir = b.workDir
-	}
-
-	if err := restartCmd.Start(); err != nil {
+	// 重启当前的Telegram Bot容器
+	restartCmd := exec.Command("docker", "restart", "opensqt-telegram")
+	if err := restartCmd.Run(); err != nil {
 		b.sendMessage(chatID, fmt.Sprintf("⚠️ 重启 Bot 失败: %v", err))
 		return
 	}
 
-	b.sendMessage(chatID, "✅ Telegram Bot 已重启")
+	b.sendMessage(chatID, "✅ 更新完成，Telegram Bot 已重启")
 
 	// 延迟一下，确保消息发送完成
 	time.Sleep(1 * time.Second)
 
-	// 退出当前 Bot 进程
+	// 退出当前进程，让Docker重启
 	b.Stop()
 	os.Exit(0)
 }

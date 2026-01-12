@@ -142,15 +142,67 @@ opensqt_platform/
 
 ### 运行 (Usage)
 
+#### 方式一：编译后运行（推荐）
+
+1. **编译程序**
+   ```bash
+   chmod +x scripts/build.sh
+   ./scripts/build.sh
+   ```
+
+2. **启动主程序**
+   ```bash
+   ./opensqt config.yaml
+   ```
+
+#### 方式二：直接运行源码
+
 ```bash
-go run main.go
+go run main.go config.yaml
 ```
 
-或者编译后运行：
+#### 方式三：Telegram Bot 远程控制（推荐）
+
+1. **配置 Telegram Bot**
+   
+   复制环境变量配置文件：
+   ```bash
+   cp .env.example .env
+   ```
+   
+   编辑 `.env` 文件，填入 Telegram Bot 配置：
+   ```bash
+   # Telegram Bot 配置
+   TELEGRAM_BOT_TOKEN=你的Bot Token
+   TELEGRAM_ALLOWED_USERS=你的用户ID
+   ```
+
+2. **启动 Telegram Bot**
+   ```bash
+   ./telegram_bot
+   ```
+
+3. **远程控制**
+   
+   在 Telegram 中向你的 Bot 发送命令：
+   - `/run` - 启动交易程序
+   - `/stop` - 停止交易程序
+   - `/status` - 查看运行状态
+   - `/logs` - 查看最近日志
+   - `/update` - 拉取代码更新并重新编译
+   - `/help` - 查看所有命令
+
+   **优势**：
+   - 🌐 **远程控制**：在任何地方通过手机控制服务器上的交易程序
+   - 🔄 **自动更新**：一键拉取最新代码并重新编译
+   - 📊 **实时监控**：接收交易成交、风控触发等关键事件通知
+   - ⚙️ **配置管理**：通过聊天界面修改交易参数
+
+#### 方式四：使用启动脚本
 
 ```bash
-go build -o opensqt
-./opensqt
+chmod +x scripts/start.sh
+./scripts/start.sh
 ```
 
 ## 🏗️ 系统架构 (Architecture)

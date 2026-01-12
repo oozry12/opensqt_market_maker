@@ -1,48 +1,19 @@
 version: '3.8'
 
 services:
-  opensqt:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: opensqt-trading
-    restart: unless-stopped
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro
-      - ./logs:/app/logs
-    environment:
-      # 从环境变量或 .env 文件加载
-      - BINANCE_API_KEY=${BINANCE_API_KEY}
-      - BINANCE_SECRET_KEY=${BINANCE_SECRET_KEY}
-      - BITGET_API_KEY=${BITGET_API_KEY}
-      - BITGET_SECRET_KEY=${BITGET_SECRET_KEY}
-      - BITGET_PASSPHRASE=${BITGET_PASSPHRASE}
-      - GATE_API_KEY=${GATE_API_KEY}
-      - GATE_SECRET_KEY=${GATE_SECRET_KEY}
-    networks:
-      - opensqt-network
-    depends_on:
-      - telegram-bot
-    profiles:
-      - trading
-
   telegram-bot:
-    build:
-      context: .
-      dockerfile: Dockerfile.telegram
+    image: ghcr.io/dennisyang1986/opensqt-telegram:latest
     container_name: opensqt-telegram
     restart: unless-stopped
     volumes:
-      - .:/trading:rw  # 挂载整个项目目录，用于 git pull 和编译
+      - .:/workspace:rw
       - ./logs:/app/logs
-    environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS}
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file:
+      - .env
     networks:
       - opensqt-network
-    profiles:
-      - telegram
-      - trading
+    command: ["-dir", "/workspace"]
 
 networks:
   opensqt-network:

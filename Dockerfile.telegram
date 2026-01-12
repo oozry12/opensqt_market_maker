@@ -22,8 +22,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o telegram_bot ./cmd/tel
 # 最终镜像
 FROM alpine:latest
 
-# 安装必要的包（包括 git 和 go，用于更新和编译）
-RUN apk --no-cache add ca-certificates tzdata git go
+# 安装必要的包（包括 docker cli 和 git）
+RUN apk --no-cache add ca-certificates tzdata git docker-cli curl
 
 # 创建非root用户
 RUN adduser -D -s /bin/sh telegram
@@ -39,12 +39,14 @@ COPY .env.example .
 
 # 设置权限
 RUN chown -R telegram:telegram /app
-USER telegram
 
 # 健康检查
 HEALTHCHECK --interval=60s --timeout=10s --start-period=10s --retries=3 \
   CMD pgrep telegram_bot || exit 1
 
+# 切换到非root用户
+USER telegram
+
 # 启动命令
 ENTRYPOINT ["./telegram_bot"]
-CMD ["-dir", "/trading", "-config", "config.yaml"]
+CMD ["-dir", "/workspace"]

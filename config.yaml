@@ -123,14 +123,14 @@ trading:
   # 阴跌检测配置（均线压制 + 连续收阴）
   # 用于识别"钝刀子割肉"的缓慢下跌行情，防止在阴跌中把子弹打光
   downtrend_detection:
-    enabled: false                  # 是否启用阴跌检测（默认关闭）
+    enabled: true                  # 是否启用阴跌检测（默认关闭）
     ma_window: 20                   # 均线周期（默认20）
     mild_threshold: 0.99            # 轻度下跌阈值（价格 < MA × 0.99，即低于均线1%）
     severe_threshold: 0.97         # 严重下跌阈值（价格 < MA × 0.96，即低于均线3%）
     consecutive_down_count: 3       # 连续收阴K线数（默认6根）
     mild_multiplier: 0.5            # 轻度下跌时买入数量乘数（打5折）
     severe_multiplier: 0.2          # 严重阴跌时买入数量乘数（打2折）
-    severe_window_ratio: 0.1        # 严重阴跌时买单窗口比例（只挂30%的买单）
+    severe_window_ratio: 0.1        # 严重阴跌时买单窗口比例（只挂10%的买单）
     kline_interval: "5m"            # K线周期（默认5分钟）
     #
     # 判定逻辑：
@@ -146,7 +146,7 @@ trading:
     max_short_positions: 5          # 最大空仓数量（减少到5个，降低风险）
     short_threshold: 1.010          # 开空仓阈值（提高到1.0%，更严格）
     short_ma_window: 20             # 开空仓均线周期（默认20）
-    short_close_rate: 0.008         # 空仓平仓利润率（提高到0.8%，确保盈利）
+    short_close_rate: 0.006        # 空仓平仓利润率（提高到0.6%，确保盈利）
     #
     # 🔥 重要修复：
     # 1. 做空网格只在当前价格上方操作，避免与做多网格冲突
@@ -168,9 +168,9 @@ trading:
     enabled: false                  # 是否启用暴跌检测（默认关闭）
     ma_window: 20                   # 短期均线周期（默认20）
     long_ma_window: 60              # 长期均线周期（默认60）
-    min_uptrend_candles: 8          # 最小连续上涨K线数（提高到8，更严格）
-    mild_crash_rate: 0.08           # 轻度暴跌幅度（提高到8%，避免误触发）
-    severe_crash_rate: 0.15         # 严重暴跌幅度（提高到15%）
+    min_uptrend_candles: 3          # 最小连续上涨K线数（提高到8，更严格）
+    mild_crash_rate: 0.005           # 轻度暴跌幅度（提高到0.5%，避免误触发）
+    severe_crash_rate: 0.015         # 严重暴跌幅度（提高到1.5%）
     kline_interval: "5m"            # K线周期（默认"5m"）
     #
     # 🔥 重要说明：
@@ -181,8 +181,7 @@ trading:
     # 1. 单边上涨趋势：MA20 > MA60 且 连续8根K线收阳
     # 2. 暴跌：从最近10根K线最高点下跌超过8%（轻度）或15%（严重）
     # 3. 触发做空：单边上涨 + 暴跌 → 允许开空仓
-    severe_crash_rate: 0.10         # 严重暴跌幅度（默认0.10即10%）
-    kline_interval: "5m"            # K线周期（默认"1h"）
+
     #
     # 判定逻辑：
     # 1. 单边上涨趋势：MA20 > MA60 且 连续5根K线收阳（Close > Open）

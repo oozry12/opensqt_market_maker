@@ -143,6 +143,8 @@ jobs:
           ghcr.io/${{ github.repository_owner }}/opensqt:latest
           ghcr.io/${{ github.repository_owner }}/opensqt:${{ github.sha }}
         platforms: linux/amd64,linux/arm64
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
     - name: Build and push Telegram Bot Docker image
       uses: docker/build-push-action@v5
@@ -154,3 +156,5 @@ jobs:
           ghcr.io/${{ github.repository_owner }}/opensqt-telegram:latest
           ghcr.io/${{ github.repository_owner }}/opensqt-telegram:${{ github.sha }}
         platforms: linux/amd64,linux/arm64
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
