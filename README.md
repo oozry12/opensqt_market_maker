@@ -98,48 +98,95 @@ opensqt_platform/
 ## 🚀 快速开始 (Getting Started)
 
 ### 环境要求 (Prerequisites)
-- Go 1.21 或更高版本
-- 网络环境需能访问交易所 API
+- Linux 服务器（支持 x86_64 或 ARM64）
+- 网络环境需能访问交易所 API 和 GitHub
 
-### 安装 (Installation)
+### 快速部署（推荐）
 
-1. **克隆仓库**
+**一键部署脚本**：
+```bash
+# 下载部署脚本
+wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/quick_deploy.sh
+
+# 添加执行权限
+chmod +x quick_deploy.sh
+
+# 运行部署脚本
+./quick_deploy.sh
+```
+
+脚本会自动：
+1. 检测系统架构
+2. 下载最新的编译好的二进制文件
+3. 解压并设置权限
+4. 启动 Telegram Bot
+
+### 手动部署
+
+1. **下载最新版本**
    ```bash
-   git clone https://github.com/dennisyang1986/opensqt_market_maker.git
-   cd opensqt_market_maker
+   # 根据你的架构选择下载
+   # x86_64 架构:
+   wget https://github.com/dennisyang1986/opensqt_market_maker/releases/download/latest/opensqt-linux-amd64.tar.gz
+   
+   # ARM64 架构:
+   wget https://github.com/dennisyang1986/opensqt_market_maker/releases/download/latest/opensqt-linux-arm64.tar.gz
    ```
 
-2. **安装依赖**
+2. **解压文件**
    ```bash
-   go mod download
+   tar -xzf opensqt-linux-amd64.tar.gz
+   chmod +x opensqt telegram_bot
+   ```
+
+3. **配置环境变量**
+   ```bash
+   # 下载配置文件模板
+   wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/.env.example -O .env
+   wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/config.yaml -O config.yaml
+   
+   # 编辑配置
+   nano .env        # 填入 API 密钥和 Telegram Bot 配置
+   nano config.yaml # 配置交易参数
+   ```
+
+4. **启动服务**
+   ```bash
+   # 下载启动脚本
+   wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/start_bot.sh
+   chmod +x start_bot.sh
+   
+   # 启动 Telegram Bot
+   ./start_bot.sh
    ```
 
 ### 配置 (Configuration)
 
-1. 复制示例配置文件：
-   ```bash
-   cp config.example.yaml config.yaml
-   ```
+编辑 `.env` 文件，填入你的配置：
 
-2. 编辑 `config.yaml`，填入你的 API Key 和策略参数：
+```bash
+# Telegram Bot 配置
+TELEGRAM_BOT_TOKEN=你的Bot Token
+TELEGRAM_ALLOWED_USERS=你的用户ID
 
-   ```yaml
-   app:
-     current_exchange: "binance"  # 选择交易所
+# 交易所 API 密钥（根据使用的交易所填写）
+BINANCE_API_KEY=你的API Key
+BINANCE_SECRET_KEY=你的Secret Key
+```
 
-   exchanges:
-     binance:
-       api_key: "YOUR_API_KEY"
-       secret_key: "YOUR_SECRET_KEY"
-       fee_rate: 0.0002
+编辑 `config.yaml`，配置交易参数：
 
-   trading:
-     symbol: "ETHUSDT"       # 交易对
-     price_interval: 2       # 网格间距 (价格)
-     order_quantity: 30      # 每格投入金额 (USDT)
-     buy_window_size: 10     # 买单挂单数量
-     sell_window_size: 10    # 卖单挂单数量
-   ```
+```yaml
+app:
+  current_exchange: "binance"  # 选择交易所
+
+trading:
+  symbol: "DOGEUSDC"           # 交易对
+  price_interval: 0.00002      # 价格间隔
+  order_quantity: 12           # 每单金额 (USDT)
+  buy_window_size: 40          # 买单数量
+  sell_window_size: 30         # 卖单数量
+```
 
 ### 运行 (Usage)
 
@@ -205,6 +252,35 @@ opensqt_platform/
    - 🔄 **一键更新**：通过 `/update` 命令自动下载最新版本
    - 📊 **实时监控**：接收交易成交、风控触发等关键事件通知
    - ⚙️ **配置管理**：通过聊天界面修改交易参数
+
+### 自动部署（高级功能）
+
+配置 Webhook 后，每次 push 代码到 GitHub，服务器会自动更新到最新版本：
+
+1. **启动 Webhook 服务器**
+   ```bash
+   # 配置 .env 文件
+   echo "WEBHOOK_SECRET=$(openssl rand -hex 32)" >> .env
+   echo "WEBHOOK_PORT=9000" >> .env
+   
+   # 启动服务
+   ./start_webhook.sh
+   ```
+
+2. **配置 GitHub Secrets**
+   - 进入仓库 Settings → Secrets and variables → Actions
+   - 添加 `WEBHOOK_URL`: `http://your-server-ip:9000/webhook`
+   - 添加 `WEBHOOK_SECRET`: 与 .env 中相同的密码
+
+3. **完成！**
+   - 现在每次 push 代码，服务器会自动下载并部署最新版本
+   - 详细配置请参阅 [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md)
+
+   **优势**：
+   - 🔄 **全自动部署**：push 代码后自动更新服务器
+   - 🔒 **安全验证**：使用 HMAC-SHA256 签名验证
+   - 📦 **零停机更新**：自动停止旧版本，启动新版本
+   - 📝 **完整日志**：记录每次部署的详细信息
 
 #### 方式二：从源码编译（开发者）
 

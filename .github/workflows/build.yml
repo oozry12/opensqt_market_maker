@@ -57,10 +57,18 @@ jobs:
       run: |
         go build -ldflags="-s -w" -o dist/telegram_bot ./cmd/telegram_bot
 
+    - name: Build Webhook Server
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        CGO_ENABLED: 0
+      run: |
+        go build -ldflags="-s -w" -o dist/webhook_server ./cmd/webhook_server
+
     - name: Create archive
       run: |
         cd dist
-        tar -czf opensqt-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz opensqt telegram_bot
+        tar -czf opensqt-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz opensqt telegram_bot webhook_server
         cd ..
 
     - name: Upload artifacts
@@ -110,6 +118,11 @@ jobs:
           - `opensqt-linux-amd64.tar.gz` - Linux x86_64 版本
           - `opensqt-linux-arm64.tar.gz` - Linux ARM64 版本
           
+          ## 包含文件
+          - `opensqt` - 主交易程序
+          - `telegram_bot` - Telegram 控制器
+          - `webhook_server` - Webhook 自动部署服务器
+          
           ## 使用方法
           ```bash
           # 下载对应架构的文件
@@ -119,13 +132,40 @@ jobs:
           tar -xzf opensqt-linux-amd64.tar.gz
           
           # 添加执行权限
-          chmod +x opensqt telegram_bot
+          chmod +x opensqt telegram_bot webhook_server
           
-          # 启动
+          # 启动 Telegram Bot
           ./telegram_bot
+          
+          # 启动 Webhook 服务器（可选，用于自动部署）
+          ./start_webhook.sh
           ```
         files: release/*.tar.gz
         prerelease: false
         draft: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Trigger webhook deployment
+      if: success()
+      continue-on-error: true
+      run: |
+        if [ -n "${{ secrets.WEBHOOK_URL }}" ]; then
+          echo "📡 触发 Webhook 部署..."
+          curl -X POST "${{ secrets.WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -H "X-Hub-Signature-256: sha256=$(echo -n '${{ github.sha }}' | openssl dgst -sha256 -hmac '${{ secrets.WEBHOOK_SECRET }}' | sed 's/^.* //')" \
+            -d '{
+              "ref": "${{ github.ref }}",
+              "repository": {
+                "full_name": "${{ github.repository }}"
+              },
+              "head_commit": {
+                "message": "${{ github.event.head_commit.message }}",
+                "id": "${{ github.sha }}"
+              }
+            }'
+          echo "✅ Webhook 已触发"
+        else
+          echo "ℹ️ 未配置 WEBHOOK_URL，跳过"
+        fi
