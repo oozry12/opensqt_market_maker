@@ -257,14 +257,14 @@ trading:
 
 配置 Webhook 后，每次 push 代码到 GitHub，服务器会自动更新到最新版本：
 
-1. **启动 Webhook 服务器**
+1. **配置并启用 Webhook**
    ```bash
    # 配置 .env 文件
    echo "WEBHOOK_SECRET=$(openssl rand -hex 32)" >> .env
    echo "WEBHOOK_PORT=9001" >> .env
    
-   # 启动服务
-   ./start_webhook.sh
+   # 重新部署并启用 Webhook
+   ./quick_deploy.sh --enable-webhook
    ```
 
 2. **配置 GitHub Secrets**

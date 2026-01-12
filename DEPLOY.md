@@ -118,7 +118,24 @@ nano config.yaml   # 配置交易参数
 
 配置 Webhook 后，每次 push 代码到 GitHub，服务器会自动更新。
 
-### 服务器端配置
+### 快速启用（推荐）
+
+```bash
+# 1. 配置 Webhook 环境变量
+echo "WEBHOOK_SECRET=$(openssl rand -hex 32)" >> .env
+echo "WEBHOOK_PORT=9001" >> .env
+
+# 2. 重新部署并启用 Webhook
+./quick_deploy.sh --enable-webhook
+
+# 3. 配置防火墙
+sudo ufw allow 9001/tcp
+
+# 4. 测试
+curl http://localhost:9001/health
+```
+
+### 手动配置（备选）
 
 **1. 配置 Webhook 环境变量**
 
@@ -139,6 +156,10 @@ openssl rand -hex 32
 **2. 启动 Webhook 服务器**
 
 ```bash
+# 使用 quick_deploy.sh（推荐）
+./quick_deploy.sh --enable-webhook
+
+# 或使用独立脚本
 ./start_webhook.sh
 ```
 

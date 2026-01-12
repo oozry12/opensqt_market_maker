@@ -27,6 +27,43 @@ chmod +x webhook_server
 go build -o webhook_server ./cmd/webhook_server
 ```
 
+## 服务器端配置
+
+### 方法一：快速启用（推荐）
+
+使用 `quick_deploy.sh` 一键启用 Webhook：
+
+```bash
+# 1. 配置 Webhook 环境变量
+echo "WEBHOOK_SECRET=$(openssl rand -hex 32)" >> .env
+echo "WEBHOOK_PORT=9001" >> .env
+
+# 2. 部署并启用 Webhook
+./quick_deploy.sh --enable-webhook
+
+# 3. 配置防火墙
+sudo ufw allow 9001/tcp
+
+# 4. 测试健康检查
+curl http://localhost:9001/health
+```
+
+### 方法二：手动配置
+
+**1. 获取 Webhook 服务器**
+
+Webhook 服务器已包含在发布包中：
+
+```bash
+# 使用 quick_deploy.sh 自动下载
+./quick_deploy.sh
+
+# 或手动下载
+wget https://github.com/dennisyang1986/opensqt_market_maker/releases/download/latest/opensqt-linux-amd64.tar.gz
+tar -xzf opensqt-linux-amd64.tar.gz
+chmod +x webhook_server
+```
+
 ### 2. 配置环境变量
 
 编辑 `.env` 文件：
