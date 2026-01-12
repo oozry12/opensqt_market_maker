@@ -174,7 +174,7 @@ GitHub Actions 触发
     ├─ git reset --hard origin/main
     └─ git pull
     ↓
-执行 quick_deploy.sh
+执行 quick_deploy.sh --enable-webhook
     ↓
 下载最新二进制文件
     ↓
@@ -182,7 +182,7 @@ GitHub Actions 触发
     ↓
 解压新文件
     ↓
-重启程序
+重启程序（包括 Webhook 服务器）
     ↓
 部署完成 ✅
 ```

@@ -68,11 +68,11 @@ GitHub Actions 编译
 🔧 设置脚本执行权限
     └─ chmod +x quick_deploy.sh
     ↓
-🚀 执行 quick_deploy.sh
+🚀 执行 quick_deploy.sh --enable-webhook
     ├─ 下载最新二进制文件
     ├─ 解压文件
     ├─ 停止旧服务
-    └─ 启动新服务
+    └─ 启动新服务（包括 Webhook）
     ↓
 ✅ 部署完成
 ```

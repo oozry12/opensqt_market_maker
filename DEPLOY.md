@@ -211,9 +211,9 @@ GitHub Actions 编译
     ├─ git reset --hard origin/main
     └─ git pull
     ↓
-服务器下载新版本
+服务器下载新版本（执行 quick_deploy.sh --enable-webhook）
     ↓
-自动重启服务
+自动重启服务（包括 Webhook 服务器）
     ↓
 部署完成 ✅
 ```

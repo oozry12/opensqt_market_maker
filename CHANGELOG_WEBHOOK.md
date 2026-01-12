@@ -82,7 +82,7 @@ GitHub Actions 自动触发
          ↓
 验证签名 (HMAC-SHA256)
          ↓
-执行 quick_deploy.sh
+执行 quick_deploy.sh --enable-webhook
          ↓
 下载最新的 tar.gz 文件
          ↓
@@ -90,11 +90,11 @@ GitHub Actions 自动触发
          ↓
 停止旧的 telegram_bot
          ↓
-停止旧的 webhook_server (如果在运行)
+停止旧的 webhook_server
          ↓
 启动新的 telegram_bot
          ↓
-重启 webhook_server (如果之前在运行)
+重启 webhook_server
          ↓
 部署完成 ✅
 ```
