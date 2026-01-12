@@ -10,6 +10,7 @@
 </div>
 
 ---
+## **还在测试中，功能尚不完善~**
 
 ## 📖 项目简介 (Introduction)
 
@@ -142,29 +143,31 @@ opensqt_platform/
 
 ### 运行 (Usage)
 
-#### 方式一：编译后运行（推荐）
+#### 推荐方式：直接下载预编译的二进制文件
 
-1. **编译程序**
+1. **下载最新版本**
    ```bash
-   chmod +x scripts/build.sh
-   ./scripts/build.sh
-   ```
-
-2. **启动主程序**
-   ```bash
-   ./opensqt config.yaml
-   ```
-
-#### 方式二：Telegram Bot 远程控制（推荐）
-
-1. **配置 Telegram Bot**
+   # 下载对应架构的文件（自动检测）
+   wget https://github.com/oozry12/opensqt_market_maker/releases/download/latest/opensqt-linux-amd64.tar.gz
    
-   复制环境变量配置文件：
+   # 或 ARM64 架构
+   # wget https://github.com/oozry12/opensqt_market_maker/releases/download/latest/opensqt-linux-arm64.tar.gz
+   ```
+
+2. **解压文件**
    ```bash
-   cp .env.example .env
+   tar -xzf opensqt-linux-amd64.tar.gz
+   chmod +x opensqt telegram_bot
+   ```
+
+3. **配置环境变量**
+   
+   创建 `.env` 文件：
+   ```bash
+   nano .env
    ```
    
-   编辑 `.env` 文件，填入 Telegram Bot 配置和 API 密钥：
+   填入配置：
    ```bash
    # Telegram Bot 配置
    TELEGRAM_BOT_TOKEN=你的Bot Token
@@ -175,32 +178,43 @@ opensqt_platform/
    BINANCE_SECRET_KEY=你的Secret Key
    ```
 
-2. **启动 Telegram Bot**
+4. **配置交易参数**
+   
+   下载配置文件模板：
+   ```bash
+   wget https://raw.githubusercontent.com/oozry12/opensqt_market_maker/main/config.yaml
+   nano config.yaml  # 编辑交易参数
+   ```
+
+5. **启动 Telegram Bot**
    ```bash
    ./telegram_bot
    ```
 
-3. **远程控制**
-   
-   在 Telegram 中向你的 Bot 发送命令：
+6. **在 Telegram 中控制**
    - `/run` - 启动交易程序
    - `/stop` - 停止交易程序
    - `/status` - 查看运行状态
    - `/logs` - 查看最近日志
-   - `/update` - 拉取代码更新并重新编译
+   - `/update` - 自动下载并更新到最新版本
    - `/help` - 查看所有命令
 
    **优势**：
-   - 🌐 **远程控制**：在任何地方通过手机控制服务器上的交易程序
-   - 🔄 **自动更新**：一键拉取最新代码并重新编译
+   - 🚀 **无需编译**：直接下载预编译的二进制文件
+   - 🌐 **远程控制**：在任何地方通过手机控制服务器
+   - 🔄 **一键更新**：通过 `/update` 命令自动下载最新版本
    - 📊 **实时监控**：接收交易成交、风控触发等关键事件通知
    - ⚙️ **配置管理**：通过聊天界面修改交易参数
 
-#### 方式三：使用启动脚本
+#### 方式二：从源码编译（开发者）
+
+如果你需要修改代码：
 
 ```bash
-chmod +x scripts/start.sh
-./scripts/start.sh
+git clone https://github.com/dennisyang1986/opensqt_market_maker.git
+cd opensqt_market_maker
+chmod +x scripts/build.sh
+./scripts/build.sh
 ```
 
 ## 🏗️ 系统架构 (Architecture)
