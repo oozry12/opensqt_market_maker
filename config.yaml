@@ -148,7 +148,7 @@ trading:
     kline_interval: "5m"           # K线周期：5分钟
     short_zone_min_mult: 1.004       # 做空区域最小倍数（锚点 × 1.2）
     short_zone_max_mult: 1.006      # 做空区域最大倍数（锚点 × 3.0）
-    max_short_positions: 10        # 最大空仓数量
+    max_short_positions: 8        # 最大空仓数量
     #
     # 做空区域计算：
     # 1. 获取最近5根5分钟K线的最高点作为锚点
