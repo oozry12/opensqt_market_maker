@@ -19,7 +19,7 @@ Webhook 服务器已包含在发布包中，无需单独编译：
 ./quick_deploy.sh
 
 # 或手动下载
-wget https://github.com/dennisyang1986/opensqt_market_maker/releases/download/latest/opensqt-linux-amd64.tar.gz
+wget https://github.com/oozry12/opensqt_market_maker/releases/download/latest/opensqt-linux-amd64.tar.gz
 tar -xzf opensqt-linux-amd64.tar.gz
 chmod +x webhook_server
 

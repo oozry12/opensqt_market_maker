@@ -30,7 +30,7 @@ export $(grep -v '^#' .env | xargs)
 
 # 设置默认值
 if [ -z "$WEBHOOK_PORT" ]; then
-    export WEBHOOK_PORT=9000
+    export WEBHOOK_PORT=9001
 fi
 
 if [ -z "$DEPLOY_SCRIPT" ]; then
