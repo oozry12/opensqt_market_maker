@@ -418,22 +418,81 @@ func (b *Bot) sendStatus(chatID int64) {
 // sendLogs 发送最近日志
 func (b *Bot) sendLogs(chatID int64) {
 	b.logMu.RLock()
-	defer b.logMu.RUnlock()
+	bufferLen := len(b.logBuffer)
+	var bufferLogs []string
+	if bufferLen > 0 {
+		bufferLogs = make([]string, bufferLen)
+		copy(bufferLogs, b.logBuffer)
+	}
+	b.logMu.RUnlock()
 
-	if len(b.logBuffer) == 0 {
-		b.sendMessage(chatID, "📝 暂无日志")
-		return
+	var logs string
+
+	// 如果内存缓存有日志，使用缓存
+	if len(bufferLogs) > 0 {
+		logs = "📝 *最近日志 (实时):*\n```\n"
+		for _, line := range bufferLogs {
+			logs += line + "\n"
+		}
+		logs += "```"
+	} else {
+		// 否则尝试从日志文件读取
+		logLines := b.readLogFile(50) // 读取最近50行
+		if len(logLines) == 0 {
+			b.sendMessage(chatID, "📝 暂无日志\n\n💡 提示: 如果交易程序是手动启动的，请确保日志文件存在于 log/ 目录")
+			return
+		}
+		logs = "📝 *最近日志 (文件):*\n```\n"
+		for _, line := range logLines {
+			logs += line + "\n"
+		}
+		logs += "```"
 	}
 
-	logs := "📝 *最近日志:*\n```\n"
-	for _, line := range b.logBuffer {
-		logs += line + "\n"
+	// Telegram 消息长度限制为 4096 字符
+	if len(logs) > 4000 {
+		logs = logs[:3900] + "\n...(日志过长已截断)```"
 	}
-	logs += "```"
 
 	msg := tgbotapi.NewMessage(chatID, logs)
 	msg.ParseMode = "Markdown"
 	b.api.Send(msg)
+}
+
+// readLogFile 从日志文件读取最近的日志行
+func (b *Bot) readLogFile(lines int) []string {
+	// 获取今天的日志文件
+	today := time.Now().Format("2006-01-02")
+	logFileName := filepath.Join(b.workDir, "log", fmt.Sprintf("opensqt-%s.log", today))
+
+	file, err := os.Open(logFileName)
+	if err != nil {
+		// 尝试昨天的日志文件
+		yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+		logFileName = filepath.Join(b.workDir, "log", fmt.Sprintf("opensqt-%s.log", yesterday))
+		file, err = os.Open(logFileName)
+		if err != nil {
+			return nil
+		}
+	}
+	defer file.Close()
+
+	// 读取文件所有行
+	var allLines []string
+	scanner := bufio.NewScanner(file)
+	// 增大缓冲区以处理长行
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		allLines = append(allLines, scanner.Text())
+	}
+
+	// 返回最后 N 行
+	if len(allLines) <= lines {
+		return allLines
+	}
+	return allLines[len(allLines)-lines:]
 }
 
 // sendMessage 发送消息
