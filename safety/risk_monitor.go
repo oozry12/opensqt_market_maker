@@ -125,7 +125,7 @@ func (r *RiskMonitor) onCandleUpdate(candle *exchange.Candle) {
 	r.mu.RUnlock()
 
 	if !exists {
-		logger.Warn("⚠️ 收到未监控的币种K线: %s", c.Symbol)
+		logger.Debug("ℹ️ 收到未监控的币种K线: %s", c.Symbol)
 		return
 	}
 

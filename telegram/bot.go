@@ -426,37 +426,66 @@ func (b *Bot) sendLogs(chatID int64) {
 	}
 	b.logMu.RUnlock()
 
-	var logs string
+	var logLines []string
+	var source string
 
 	// 如果内存缓存有日志，使用缓存
 	if len(bufferLogs) > 0 {
-		logs = "📝 *最近日志 (实时):*\n```\n"
-		for _, line := range bufferLogs {
-			logs += line + "\n"
-		}
-		logs += "```"
+		logLines = bufferLogs
+		source = "实时"
 	} else {
-		// 否则尝试从日志文件读取
-		logLines := b.readLogFile(50) // 读取最近50行
+		// 否则尝试从日志文件读取（增加到100行）
+		logLines = b.readLogFile(100)
+		source = "文件"
 		if len(logLines) == 0 {
 			b.sendMessage(chatID, "📝 暂无日志\n\n💡 提示: 如果交易程序是手动启动的，请确保日志文件存在于 log/ 目录")
 			return
 		}
-		logs = "📝 *最近日志 (文件):*\n```\n"
-		for _, line := range logLines {
-			logs += line + "\n"
+	}
+
+	// 分段发送日志，每段不超过 3800 字符（留余量给格式）
+	const maxChunkSize = 3800
+	var chunks []string
+	currentChunk := ""
+
+	for _, line := range logLines {
+		// 如果当前行加上已有内容超过限制，保存当前块并开始新块
+		if len(currentChunk)+len(line)+1 > maxChunkSize {
+			if currentChunk != "" {
+				chunks = append(chunks, currentChunk)
+			}
+			currentChunk = line
+		} else {
+			if currentChunk != "" {
+				currentChunk += "\n"
+			}
+			currentChunk += line
 		}
-		logs += "```"
+	}
+	if currentChunk != "" {
+		chunks = append(chunks, currentChunk)
 	}
 
-	// Telegram 消息长度限制为 4096 字符
-	if len(logs) > 4000 {
-		logs = logs[:3900] + "\n...(日志过长已截断)```"
+	// 发送每个日志块
+	for i, chunk := range chunks {
+		var header string
+		if len(chunks) == 1 {
+			header = fmt.Sprintf("📝 *最近日志 (%s):*\n", source)
+		} else {
+			header = fmt.Sprintf("📝 *日志 (%s) [%d/%d]:*\n", source, i+1, len(chunks))
+		}
+		
+		logs := header + "```\n" + chunk + "\n```"
+		
+		msg := tgbotapi.NewMessage(chatID, logs)
+		msg.ParseMode = "Markdown"
+		b.api.Send(msg)
+		
+		// 多条消息之间稍微延迟，避免发送过快
+		if i < len(chunks)-1 {
+			time.Sleep(500 * time.Millisecond)
+		}
 	}
-
-	msg := tgbotapi.NewMessage(chatID, logs)
-	msg.ParseMode = "Markdown"
-	b.api.Send(msg)
 }
 
 // readLogFile 从日志文件读取最近的日志行
