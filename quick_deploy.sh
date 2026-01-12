@@ -53,91 +53,31 @@ echo "📋 检测到系统架构: $ARCH (Go: $GOARCH)"
 REPO="oozry12/opensqt_market_maker"
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/latest/opensqt-linux-${GOARCH}.tar.gz"
 
-# 最大重试次数
-MAX_RETRIES=3
-RETRY_DELAY=60  # 重试等待时间（秒）
-
-# 下载并验证函数
-download_and_verify() {
-    local retry_count=0
+# 下载函数
+download_file() {
+    echo "📥 正在下载最新版本..."
+    echo "🔗 下载地址: $DOWNLOAD_URL"
     
-    while [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "📥 正在下载最新版本... (尝试 $((retry_count + 1))/$MAX_RETRIES)"
-        echo "🔗 下载地址: $DOWNLOAD_URL"
-        
-        # 下载文件
-        if command -v wget &> /dev/null; then
-            wget -O opensqt-latest.tar.gz "$DOWNLOAD_URL" 2>&1 | grep -v "^--"
-        elif command -v curl &> /dev/null; then
-            curl -L -o opensqt-latest.tar.gz "$DOWNLOAD_URL"
-        else
-            echo "❌ 需要安装 wget 或 curl"
-            exit 1
-        fi
-        
-        if [ ! -f opensqt-latest.tar.gz ]; then
-            echo "❌ 下载失败"
-            exit 1
-        fi
-        
-        echo "✅ 下载完成"
-        
-        # 获取文件的修改时间（Unix 时间戳）
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS
-            FILE_TIME=$(stat -f %m opensqt-latest.tar.gz)
-        else
-            # Linux
-            FILE_TIME=$(stat -c %Y opensqt-latest.tar.gz)
-        fi
-        
-        # 获取当前时间
-        CURRENT_TIME=$(date +%s)
-        
-        # 计算时间差（秒）
-        TIME_DIFF=$((CURRENT_TIME - FILE_TIME))
-        
-        # 转换为分钟
-        TIME_DIFF_MIN=$((TIME_DIFF / 60))
-        
-        echo "⏰ 文件构建时间: $(date -d @${FILE_TIME} 2>/dev/null || date -r ${FILE_TIME})"
-        echo "⏰ 当前时间: $(date)"
-        echo "⏰ 时间差: ${TIME_DIFF_MIN} 分钟"
-        
-        # 检查时间差是否在3分钟以内
-        if [ $TIME_DIFF -le 180 ]; then
-            echo "✅ 文件是最新的（${TIME_DIFF_MIN} 分钟前构建）"
-            return 0
-        else
-            echo "⚠️ 文件不是最新的（${TIME_DIFF_MIN} 分钟前构建，超过3分钟）"
-            
-            retry_count=$((retry_count + 1))
-            
-            if [ $retry_count -lt $MAX_RETRIES ]; then
-                echo "⏰ 等待 ${RETRY_DELAY} 秒后重试..."
-                rm -f opensqt-latest.tar.gz
-                sleep $RETRY_DELAY
-            else
-                echo "❌ 已达到最大重试次数，文件仍不是最新的"
-                echo "💡 可能的原因："
-                echo "   1. GitHub Actions 编译时间较长"
-                echo "   2. GitHub Releases 发布延迟"
-                echo "   3. 网络缓存问题"
-                echo ""
-                echo "建议："
-                echo "   - 检查 GitHub Actions 是否完成"
-                echo "   - 稍后手动运行此脚本"
-                rm -f opensqt-latest.tar.gz
-                exit 1
-            fi
-        fi
-    done
+    # 下载文件
+    if command -v wget &> /dev/null; then
+        wget -O opensqt-latest.tar.gz "$DOWNLOAD_URL" 2>&1 | grep -v "^--"
+    elif command -v curl &> /dev/null; then
+        curl -L -o opensqt-latest.tar.gz "$DOWNLOAD_URL"
+    else
+        echo "❌ 需要安装 wget 或 curl"
+        exit 1
+    fi
     
-    return 1
+    if [ ! -f opensqt-latest.tar.gz ]; then
+        echo "❌ 下载失败"
+        exit 1
+    fi
+    
+    echo "✅ 下载完成"
 }
 
-# 执行下载并验证
-download_and_verify
+# 执行下载
+download_file
 
 # 解压文件
 echo "📦 正在解压..."
