@@ -206,6 +206,11 @@ GitHub Actions 编译
     ↓
 ⏰ 等待1分钟
     ↓
+📥 更新 Git 仓库
+    ├─ git fetch --all
+    ├─ git reset --hard origin/main
+    └─ git pull
+    ↓
 服务器下载新版本
     ↓
 自动重启服务
@@ -213,7 +218,9 @@ GitHub Actions 编译
 部署完成 ✅
 ```
 
-**注意**：Webhook 收到后会等待1分钟，确保 GitHub Actions 编译完成。
+**注意**：
+- Webhook 收到后会等待1分钟，确保 GitHub Actions 编译完成
+- 部署前会先更新 Git 仓库，确保脚本和配置文件是最新的
 
 详细配置请参阅 [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md)
 

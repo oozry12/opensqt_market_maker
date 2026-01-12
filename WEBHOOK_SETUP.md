@@ -89,12 +89,17 @@ DEPLOY_DELAY=60                          # 部署延迟（秒），默认60秒
 # 添加执行权限
 chmod +x start_webhook.sh stop_webhook.sh
 
-# 启动服务器
+# 启动服务器（会自动给 quick_deploy.sh 添加执行权限）
 ./start_webhook.sh
 
 # 查看日志
 tail -f webhook.log
 ```
+
+**注意**：
+- Webhook 服务器启动时会自动给 `quick_deploy.sh` 添加执行权限
+- 每次执行部署前也会再次确认权限
+- 无需手动 `chmod +x quick_deploy.sh`
 
 ### 4. 配置防火墙
 
@@ -164,6 +169,11 @@ GitHub Actions 触发
     ↓
 ⏰ 等待1分钟（确保编译完成）
     ↓
+📥 更新 Git 仓库
+    ├─ git fetch --all
+    ├─ git reset --hard origin/main
+    └─ git pull
+    ↓
 执行 quick_deploy.sh
     ↓
 下载最新二进制文件
@@ -177,7 +187,9 @@ GitHub Actions 触发
 部署完成 ✅
 ```
 
-**注意**：Webhook 收到后会等待1分钟再执行部署，确保 GitHub Actions 已完成编译和发布。
+**注意**：
+- Webhook 收到后会等待1分钟再执行部署，确保 GitHub Actions 已完成编译和发布
+- 部署前会先更新 Git 仓库，确保脚本和配置文件是最新的
 
 ## 安全建议
 

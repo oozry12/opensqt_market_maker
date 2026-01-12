@@ -70,6 +70,13 @@ func main() {
 	log.Printf("🔐 Secret: %s", maskSecret(webhookSecret))
 	log.Printf("🌐 监听端口: %s", port)
 
+	// 🔥 确保部署脚本有执行权限
+	if err := ensureExecutable(deployScript); err != nil {
+		log.Printf("⚠️ 无法设置部署脚本执行权限: %v", err)
+	} else {
+		log.Printf("✅ 部署脚本已设置执行权限")
+	}
+
 	http.HandleFunc("/webhook", handleWebhook)
 	http.HandleFunc("/health", handleHealth)
 
@@ -144,10 +151,25 @@ func executeDeploy(payload WebhookPayload) {
 	if deployDelay > 0 {
 		log.Printf("⏰ 等待 %d 秒，确保 GitHub Actions 编译完成...", deployDelay)
 		time.Sleep(time.Duration(deployDelay) * time.Second)
-		log.Printf("✅ 等待完成，开始下载并部署...")
+		log.Printf("✅ 等待完成，开始更新代码...")
 	}
 
-	// 执行部署脚本
+	// 🔥 步骤1：更新 Git 仓库
+	log.Printf("📥 正在更新 Git 仓库...")
+	if err := updateGitRepo(); err != nil {
+		log.Printf("❌ Git 更新失败: %v", err)
+		log.Printf("⚠️ 继续执行部署脚本...")
+	} else {
+		log.Printf("✅ Git 仓库已更新")
+	}
+
+	// 🔥 步骤2：确保部署脚本有执行权限
+	if err := ensureExecutable(deployScript); err != nil {
+		log.Printf("⚠️ 无法设置部署脚本执行权限: %v", err)
+	}
+
+	// 🔥 步骤3：执行部署脚本
+	log.Printf("🚀 开始执行部署脚本...")
 	cmd := exec.Command("/bin/bash", deployScript)
 	cmd.Dir = workDir
 	cmd.Env = append(os.Environ(),
@@ -194,4 +216,68 @@ func maskSecret(secret string) string {
 		return "****"
 	}
 	return secret[:4] + "****" + secret[len(secret)-4:]
+}
+
+// ensureExecutable 确保文件有执行权限
+func ensureExecutable(filepath string) error {
+	// 获取文件信息
+	info, err := os.Stat(filepath)
+	if err != nil {
+		return fmt.Errorf("无法获取文件信息: %v", err)
+	}
+
+	// 获取当前权限
+	mode := info.Mode()
+
+	// 添加执行权限 (0755 = rwxr-xr-x)
+	// 保留原有权限，添加执行位
+	newMode := mode | 0111 // 添加所有用户的执行权限
+
+	// 设置新权限
+	if err := os.Chmod(filepath, newMode); err != nil {
+		return fmt.Errorf("无法设置执行权限: %v", err)
+	}
+
+	return nil
+}
+
+// updateGitRepo 更新 Git 仓库
+func updateGitRepo() error {
+	log.Printf("  → 执行: git fetch --all")
+	
+	// 步骤1: git fetch --all
+	fetchCmd := exec.Command("git", "fetch", "--all")
+	fetchCmd.Dir = workDir
+	fetchOutput, err := fetchCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git fetch 失败: %v, 输出: %s", err, string(fetchOutput))
+	}
+	log.Printf("  ✓ git fetch 完成")
+
+	// 步骤2: git reset --hard origin/main
+	log.Printf("  → 执行: git reset --hard origin/main")
+	resetCmd := exec.Command("git", "reset", "--hard", "origin/main")
+	resetCmd.Dir = workDir
+	resetOutput, err := resetCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git reset 失败: %v, 输出: %s", err, string(resetOutput))
+	}
+	log.Printf("  ✓ git reset 完成")
+
+	// 步骤3: git pull
+	log.Printf("  → 执行: git pull")
+	pullCmd := exec.Command("git", "pull")
+	pullCmd.Dir = workDir
+	pullOutput, err := pullCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git pull 失败: %v, 输出: %s", err, string(pullOutput))
+	}
+	log.Printf("  ✓ git pull 完成")
+	
+	// 输出 git pull 的结果
+	if len(pullOutput) > 0 {
+		log.Printf("  📝 %s", strings.TrimSpace(string(pullOutput)))
+	}
+
+	return nil
 }

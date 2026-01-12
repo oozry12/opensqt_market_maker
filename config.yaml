@@ -145,9 +145,9 @@ trading:
   neutral_grid:
     enabled: true                  # 是否启用中性网格（默认关闭，避免冲突）
     max_short_positions: 5          # 最大空仓数量（减少到5个，降低风险）
-    short_threshold: 1.010          # 开空仓阈值（提高到1.0%，更严格）
+    short_threshold: 1.005          # 开空仓阈值
     short_ma_window: 20             # 开空仓均线周期（默认20）
-    short_close_rate: 0.003        # 空仓平仓利润率（提高到0.3%，确保盈利）
+    short_close_rate: 0.0002        # 空仓平仓利润率（提高到0.3%，确保盈利）
     #
     # 🔥 重要修复：
     # 1. 做空网格只在当前价格上方操作，避免与做多网格冲突

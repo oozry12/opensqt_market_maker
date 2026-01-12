@@ -1,435 +1,376 @@
-# OpenSQT 部署检查清单
+# 部署检查清单
 
-## 📋 部署前检查
+## ✅ 已完成的功能
 
-### 1. 服务器环境
+### 1. Webhook 延迟部署
+- **状态**: ✅ 已实现
+- **功能**: Webhook 收到后等待指定时间再执行部署
+- **配置**: `DEPLOY_DELAY` 环境变量（默认60秒）
+- **文件**: `cmd/webhook_server/main.go`
+- **代码位置**: `executeDeploy()` 函数
 
-- [ ] Linux 系统（支持 x86_64 或 ARM64）
-- [ ] 已安装 wget 或 curl
-- [ ] 已安装 tar
-- [ ] 网络可访问 GitHub
-- [ ] 有足够的磁盘空间（至少 100MB）
+### 2. 自动权限管理
+- **状态**: ✅ 已实现
+- **功能**: 自动给部署脚本添加执行权限
+- **实现**: `ensureExecutable()` 函数
+- **触发时机**:
+  - Webhook 服务器启动时
+  - 每次执行部署前
+- **文件**: `cmd/webhook_server/main.go`
 
-### 2. 配置文件准备
+### 3. Git 仓库自动更新
+- **状态**: ✅ 已实现
+- **功能**: 部署前先更新 Git 仓库
+- **实现**: `updateGitRepo()` 函数
+- **执行步骤**:
+  1. `git fetch --all`
+  2. `git reset --hard origin/main`
+  3. `git pull`
+- **文件**: `cmd/webhook_server/main.go`
 
-#### .env 文件
+### 4. 固定下载地址
+- **状态**: ✅ 已实现
+- **地址**: `https://github.com/oozry12/opensqt_market_maker/releases/download/latest/opensqt-linux-${GOARCH}.tar.gz`
+- **文件**: `quick_deploy.sh`
+
+### 5. Webhook 端口配置
+- **状态**: ✅ 已实现
+- **默认端口**: 9001（避免8080冲突）
+- **配置**: `WEBHOOK_PORT` 环境变量
+- **文件**: `cmd/webhook_server/main.go`, `.env.example`
+
+### 6. 完整文档
+- **状态**: ✅ 已完成
+- **文件**:
+  - `WEBHOOK_SETUP.md` - Webhook 配置指南
+  - `DEPLOY.md` - 部署指南
+  - `CHANGELOG_WEBHOOK.md` - 更新日志
+  - `.env.example` - 环境变量示例
+
+## 🔄 工作流程
+
+```
+GitHub Push
+    ↓
+GitHub Actions 编译
+    ↓
+发布到 Releases
+    ↓
+触发 Webhook
+    ↓
+⏰ 等待 60 秒（DEPLOY_DELAY）
+    ↓
+📥 更新 Git 仓库
+    ├─ git fetch --all
+    ├─ git reset --hard origin/main
+    └─ git pull
+    ↓
+🔧 设置脚本执行权限
+    └─ chmod +x quick_deploy.sh
+    ↓
+🚀 执行 quick_deploy.sh
+    ├─ 下载最新二进制文件
+    ├─ 解压文件
+    ├─ 停止旧服务
+    └─ 启动新服务
+    ↓
+✅ 部署完成
+```
+
+## 📋 环境变量配置
+
+### .env 文件必需配置
+
 ```bash
-# 必填项
-- [ ] TELEGRAM_BOT_TOKEN（Telegram Bot Token）
-- [ ] TELEGRAM_ALLOWED_USERS（授权用户ID）
-- [ ] API 密钥（根据使用的交易所）
+# Webhook 服务器配置
+WEBHOOK_SECRET=your_strong_secret_here  # 强密码（至少32字符）
+WEBHOOK_PORT=9001                        # 监听端口
+DEPLOY_SCRIPT=./quick_deploy.sh         # 部署脚本路径
+WORK_DIR=.                               # 工作目录
+DEPLOY_DELAY=60                          # 部署延迟（秒）
 
-# 可选项（Webhook 自动部署）
-- [ ] WEBHOOK_SECRET（强密码）
-- [ ] WEBHOOK_PORT（默认 9001）
-- [ ] DEPLOY_DELAY（默认 60 秒）
+# Telegram Bot 配置
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_ALLOWED_USERS=123456789
+
+# 交易所 API 密钥
+BINANCE_API_KEY=your_api_key
+BINANCE_SECRET_KEY=your_secret_key
 ```
 
-#### config.yaml 文件
-```yaml
-- [ ] current_exchange（交易所选择）
-- [ ] symbol（交易对）
-- [ ] price_interval（价格间隔）
-- [ ] order_quantity（每单金额）
-- [ ] buy_window_size（买单数量）
-- [ ] sell_window_size（卖单数量）
-```
+### GitHub Secrets 配置
 
-### 3. GitHub 配置（可选，用于自动部署）
+在 GitHub 仓库 Settings → Secrets and variables → Actions 中添加：
 
-- [ ] 已 fork 或拥有仓库
-- [ ] 已配置 GitHub Secrets：
-  - [ ] WEBHOOK_URL
-  - [ ] WEBHOOK_SECRET
-- [ ] GitHub Actions 已启用
-
----
+- `WEBHOOK_URL`: `http://your-server-ip:9001/webhook`
+- `WEBHOOK_SECRET`: 与服务器 `.env` 中相同的密码
 
 ## 🚀 部署步骤
 
-### 方式1：快速部署（推荐）
+### 首次部署
 
 ```bash
 # 1. 下载部署脚本
 wget https://raw.githubusercontent.com/oozry12/opensqt_market_maker/main/quick_deploy.sh
 chmod +x quick_deploy.sh
 
-# 2. 下载配置文件模板
-wget https://raw.githubusercontent.com/oozry12/opensqt_market_maker/main/.env.example -O .env
-wget https://raw.githubusercontent.com/oozry12/opensqt_market_maker/main/config.yaml
-
-# 3. 编辑配置
-nano .env          # 填入 API 密钥和 Bot Token
-nano config.yaml   # 配置交易参数
-
-# 4. 运行部署
+# 2. 运行部署脚本
 ./quick_deploy.sh
 
-# 5. 检查状态
-tail -f telegram_bot.log
-```
+# 3. 配置环境变量
+nano .env
+# 填入 API 密钥和 Bot Token
 
-**检查点**：
-- [ ] 脚本下载成功
-- [ ] 配置文件已编辑
-- [ ] 部署脚本执行成功
-- [ ] Telegram Bot 启动成功
-- [ ] 日志无错误
+# 4. 配置交易参数
+nano config.yaml
 
----
-
-### 方式2：启用 Webhook 自动部署
-
-```bash
-# 1. 完成方式1的所有步骤
-
-# 2. 配置 Webhook
+# 5. 启用 Webhook（可选）
 echo "WEBHOOK_SECRET=$(openssl rand -hex 32)" >> .env
 echo "WEBHOOK_PORT=9001" >> .env
 echo "DEPLOY_DELAY=60" >> .env
 
-# 3. 下载 Webhook 脚本
-wget https://raw.githubusercontent.com/oozry12/opensqt_market_maker/main/start_webhook.sh
-wget https://raw.githubusercontent.com/oozry12/opensqt_market_maker/main/stop_webhook.sh
-chmod +x start_webhook.sh stop_webhook.sh
-
-# 4. 启动 Webhook 服务器
+# 6. 重新部署并启用 Webhook
 ./quick_deploy.sh --enable-webhook
 
-# 5. 配置防火墙
+# 7. 配置防火墙
 sudo ufw allow 9001/tcp
 
-# 6. 配置 GitHub Secrets
-# 在 GitHub 仓库设置中添加：
-# - WEBHOOK_URL: http://your-server-ip:9001/webhook
-# - WEBHOOK_SECRET: (从 .env 复制)
-
-# 7. 测试 Webhook
-curl http://localhost:9001/health
+# 8. 配置 GitHub Secrets
+# 在 GitHub 仓库设置中添加 WEBHOOK_URL 和 WEBHOOK_SECRET
 ```
 
-**检查点**：
-- [ ] Webhook 服务器启动成功
-- [ ] 防火墙已配置
-- [ ] GitHub Secrets 已添加
-- [ ] 健康检查返回 OK
-- [ ] Webhook 日志正常
-
----
-
-## ✅ 部署后验证
-
-### 1. Telegram Bot 验证
+### 后续更新
 
 ```bash
-# 查看进程
-ps aux | grep telegram_bot
-
-# 查看日志
-tail -f telegram_bot.log
-
-# 在 Telegram 中测试
-/help    # 查看帮助
-/status  # 查看状态
-```
-
-**检查点**：
-- [ ] Bot 进程正在运行
-- [ ] 日志无错误
-- [ ] Telegram 可以收到回复
-- [ ] 所有命令正常工作
-
-### 2. 交易程序验证
-
-```bash
-# 在 Telegram 中启动
-/run
-
-# 查看日志
-/logs
-
-# 查看状态
-/status
-```
-
-**检查点**：
-- [ ] 交易程序启动成功
-- [ ] 价格监控正常
-- [ ] 订单可以正常挂单
-- [ ] 持仓显示正常
-
-### 3. Webhook 验证（如果启用）
-
-```bash
-# 查看 Webhook 进程
-ps aux | grep webhook_server
-
-# 查看日志
-tail -f webhook.log
-
-# 测试部署
-git commit -m "test" --allow-empty
+# 自动更新（通过 Webhook）
 git push origin main
+# 服务器会自动部署
 
-# 等待1分钟后查看日志
-tail -f webhook.log
-```
-
-**检查点**：
-- [ ] Webhook 进程正在运行
-- [ ] 收到 GitHub webhook 请求
-- [ ] 等待60秒后开始部署
-- [ ] 自动下载新版本
-- [ ] 自动重启服务
-
----
-
-## 🔧 常见问题排查
-
-### 问题1：Telegram Bot 冲突
-
-**症状**：
-```
-Conflict: terminated by other getUpdates request
-```
-
-**解决**：
-```bash
-./stop_bot.sh
-./start_bot.sh
-```
-
-### 问题2：下载失败
-
-**症状**：
-```
-❌ 需要安装 wget 或 curl
-```
-
-**解决**：
-```bash
-# Ubuntu/Debian
-sudo apt-get install wget
-
-# CentOS/RHEL
-sudo yum install wget
-```
-
-### 问题3：权限错误
-
-**症状**：
-```
-Permission denied
-```
-
-**解决**：
-```bash
-chmod +x opensqt telegram_bot webhook_server
-chmod +x *.sh
-```
-
-### 问题4：配置文件缺失
-
-**症状**：
-```
-⚠️ .env 文件不存在
-```
-
-**解决**：
-```bash
-wget https://raw.githubusercontent.com/oozry12/opensqt_market_maker/main/.env.example -O .env
-nano .env
-```
-
-### 问题5：Webhook 未触发
-
-**检查步骤**：
-```bash
-# 1. 检查服务器状态
-ps aux | grep webhook_server
-tail -f webhook.log
-
-# 2. 检查防火墙
-sudo ufw status
-curl http://localhost:9001/health
-
-# 3. 检查 GitHub Webhook
-# Settings → Webhooks → Recent Deliveries
-
-# 4. 检查签名
-cat .env | grep WEBHOOK_SECRET
-# 确保与 GitHub Secret 一致
-```
-
----
-
-## 📊 监控和维护
-
-### 日常检查
-
-```bash
-# 每天检查一次
-./status_check.sh
-
-# 或手动检查
-ps aux | grep telegram_bot
-ps aux | grep webhook_server
-tail -n 50 telegram_bot.log
-tail -n 50 webhook.log
-```
-
-### 日志管理
-
-```bash
-# 查看实时日志
-tail -f telegram_bot.log
-
-# 查看最近100行
-tail -n 100 telegram_bot.log
-
-# 搜索错误
-grep -i error telegram_bot.log
-
-# 清理旧日志（可选）
-# 注意：会删除日志历史
-> telegram_bot.log
-> webhook.log
-```
-
-### 更新程序
-
-```bash
-# 方式1：通过 Telegram Bot
-/update
-
-# 方式2：手动更新
+# 或手动更新
 ./quick_deploy.sh
-
-# 方式3：自动更新（如果启用 Webhook）
-# 只需 push 代码到 GitHub
-git push origin main
 ```
 
----
+## 🧪 测试清单
+
+### Webhook 服务器测试
+
+```bash
+# 1. 检查服务器是否运行
+ps aux | grep webhook_server
+
+# 2. 测试健康检查
+curl http://localhost:9001/health
+# 应该返回: OK
+
+# 3. 查看日志
+tail -f webhook.log
+
+# 4. 测试部署（模拟 webhook）
+curl -X POST http://localhost:9001/webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ref": "refs/heads/main",
+    "repository": {"full_name": "test/repo"},
+    "head_commit": {
+      "message": "test deployment",
+      "id": "abc123"
+    }
+  }'
+```
+
+### Git 更新测试
+
+```bash
+# 1. 修改一个文件
+echo "# Test" >> README.md
+
+# 2. 提交并推送
+git add README.md
+git commit -m "test webhook"
+git push origin main
+
+# 3. 查看 webhook 日志
+tail -f webhook.log
+
+# 应该看到:
+# - 📥 收到 webhook
+# - ⏰ 等待 60 秒
+# - 📥 正在更新 Git 仓库
+# - ✓ git fetch 完成
+# - ✓ git reset 完成
+# - ✓ git pull 完成
+# - 🚀 开始执行部署脚本
+# - ✅ 部署成功
+```
+
+### 权限测试
+
+```bash
+# 1. 删除脚本执行权限
+chmod -x quick_deploy.sh
+
+# 2. 触发 webhook
+# Webhook 应该自动添加执行权限
+
+# 3. 验证权限
+ls -la quick_deploy.sh
+# 应该显示: -rwxr-xr-x
+```
+
+## 🔍 故障排除
+
+### Webhook 未触发
+
+**检查项**:
+1. Webhook 服务器是否运行: `ps aux | grep webhook_server`
+2. 端口是否开放: `sudo ufw status`
+3. GitHub Secrets 是否配置正确
+4. 查看 webhook 日志: `tail -f webhook.log`
+
+**解决方法**:
+```bash
+# 重启 Webhook 服务器
+./stop_webhook.sh
+./start_webhook.sh
+
+# 检查配置
+cat .env | grep WEBHOOK
+```
+
+### Git 更新失败
+
+**可能原因**:
+1. 本地有未提交的修改
+2. 网络问题
+3. Git 权限问题
+
+**解决方法**:
+```bash
+# 手动更新
+git fetch --all
+git reset --hard origin/main
+git pull
+
+# 检查 Git 状态
+git status
+```
+
+### 部署脚本执行失败
+
+**检查项**:
+1. 脚本是否有执行权限: `ls -la quick_deploy.sh`
+2. 脚本路径是否正确: `cat .env | grep DEPLOY_SCRIPT`
+3. 查看部署日志: `tail -f webhook.log`
+
+**解决方法**:
+```bash
+# 手动添加权限
+chmod +x quick_deploy.sh
+
+# 手动执行测试
+./quick_deploy.sh
+```
+
+### 延迟时间不够
+
+**问题**: GitHub Actions 编译时间超过60秒
+
+**解决方法**:
+```bash
+# 增加延迟时间到120秒
+echo "DEPLOY_DELAY=120" >> .env
+
+# 重启 Webhook 服务器
+./stop_webhook.sh
+./start_webhook.sh
+```
+
+## 📊 监控命令
+
+```bash
+# 查看所有服务状态
+ps aux | grep -E "telegram_bot|webhook_server|opensqt"
+
+# 查看 Webhook 日志（实时）
+tail -f webhook.log
+
+# 查看 Bot 日志（实时）
+tail -f telegram_bot.log
+
+# 查看最近的部署记录
+tail -n 50 webhook.log | grep -E "收到|部署|成功|失败"
+
+# 检查端口占用
+netstat -tlnp | grep 9001
+```
 
 ## 🔐 安全检查
 
-### 1. API 密钥安全
-
-- [ ] .env 文件权限设置为 600
-  ```bash
-  chmod 600 .env
-  ```
-- [ ] .env 文件未提交到 Git
-  ```bash
-  cat .gitignore | grep .env
-  ```
-- [ ] 使用只读权限的 API 密钥（如果可能）
-
-### 2. Webhook 安全
-
-- [ ] 使用强密码（至少32字符）
-  ```bash
-  openssl rand -hex 32
-  ```
-- [ ] 配置防火墙限制访问
-  ```bash
-  sudo ufw allow from trusted-ip to any port 9001
-  ```
-- [ ] 考虑使用 HTTPS（通过 Nginx 反向代理）
-
-### 3. 服务器安全
-
-- [ ] 定期更新系统
-  ```bash
-  sudo apt-get update && sudo apt-get upgrade
-  ```
-- [ ] 使用 SSH 密钥认证
-- [ ] 禁用 root 登录
-- [ ] 配置防火墙规则
-
----
-
-## 📈 性能优化
-
-### 1. 日志轮转
-
-创建 logrotate 配置：
 ```bash
-sudo nano /etc/logrotate.d/opensqt
+# 1. 检查 Secret 强度
+cat .env | grep WEBHOOK_SECRET
+# 应该至少32字符
+
+# 2. 检查防火墙
+sudo ufw status
+# 应该只开放必要端口
+
+# 3. 检查文件权限
+ls -la .env
+# 应该是 -rw------- (600)
+
+# 4. 设置正确权限
+chmod 600 .env
 ```
 
-内容：
-```
-/path/to/opensqt_market_maker/*.log {
-    daily
-    rotate 7
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0644 user user
-}
-```
+## 📝 维护建议
 
-### 2. 系统服务（可选）
+### 日常维护
 
-创建 systemd 服务：
 ```bash
-sudo nano /etc/systemd/system/opensqt-bot.service
+# 每天检查日志
+tail -n 100 webhook.log
+tail -n 100 telegram_bot.log
+
+# 每周清理旧日志
+find . -name "*.log" -mtime +7 -exec truncate -s 0 {} \;
+
+# 每月检查磁盘空间
+df -h
 ```
 
-内容：
-```ini
-[Unit]
-Description=OpenSQT Telegram Bot
-After=network.target
+### 定期更新
 
-[Service]
-Type=simple
-User=your-username
-WorkingDirectory=/path/to/opensqt_market_maker
-EnvironmentFile=/path/to/opensqt_market_maker/.env
-ExecStart=/path/to/opensqt_market_maker/telegram_bot
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-启用服务：
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable opensqt-bot
-sudo systemctl start opensqt-bot
-sudo systemctl status opensqt-bot
+# 检查是否有新版本
+git fetch origin
+git log HEAD..origin/main --oneline
+
+# 更新到最新版本
+./quick_deploy.sh
 ```
 
----
+## ✅ 完成标志
+
+当以下所有项都完成时，部署即为成功：
+
+- [ ] Webhook 服务器运行正常
+- [ ] 健康检查返回 OK
+- [ ] Git 更新功能正常
+- [ ] 部署脚本自动获得执行权限
+- [ ] Push 代码后自动部署
+- [ ] Telegram Bot 正常运行
+- [ ] 所有日志正常记录
+- [ ] 防火墙配置正确
+- [ ] GitHub Secrets 配置正确
 
 ## 📚 相关文档
 
-- [README.md](README.md) - 项目介绍
-- [DEPLOY.md](DEPLOY.md) - 详细部署指南
-- [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md) - Webhook 配置
+- [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md) - Webhook 详细配置
+- [DEPLOY.md](DEPLOY.md) - 部署指南
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - 故障排除
-- [USAGE.md](USAGE.md) - 使用指南
-
----
-
-## ✅ 部署完成确认
-
-完成以下所有检查后，部署即为成功：
-
-- [ ] Telegram Bot 正常运行
-- [ ] 可以通过 Telegram 控制
-- [ ] 交易程序可以启动
-- [ ] 订单可以正常挂单
-- [ ] 日志无错误
-- [ ] （可选）Webhook 自动部署正常工作
-
-**恭喜！OpenSQT 已成功部署！** 🎉
+- [CHANGELOG_WEBHOOK.md](CHANGELOG_WEBHOOK.md) - 更新日志
+- [README.md](README.md) - 项目介绍
 
 ---
 
