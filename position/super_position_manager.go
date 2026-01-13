@@ -638,7 +638,14 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 
 			// 检查真实持仓以决定是否设置ReduceOnly
 			actualPosition := spm.getExistingPosition()
-			finalReduceOnly := currentQty > 0 && actualPosition > 0
+			// 🔥 关键修复：只有当槽位有多单且交易所确实有多头持仓时才设置ReduceOnly
+			finalReduceOnly := false
+			if currentQty > 0 && actualPosition > 0.0000001 {
+				finalReduceOnly = true
+			}
+			
+			logger.Debug("🔍 [ReduceOnly检查] 槽位持仓: %.4f, 交易所持仓: %.4f, ReduceOnly: %t", 
+				currentQty, actualPosition, finalReduceOnly)
 			
 			// 生成 ClientOrderID (注意：使用 SlotPrice 即买入价作为标识)
 			clientOID := spm.generateClientOrderID(candidate.SlotPrice, "SELL")
@@ -1237,30 +1244,41 @@ func (spm *SuperPositionManager) getExistingPosition() float64 {
 		// PositionInfo 切片（简化版）
 		for _, pos := range positions {
 			if pos != nil && pos.Symbol == spm.config.Trading.Symbol {
-				logger.Debug("🔍 [持仓恢复] 找到持仓 (PositionInfo): %.4f", pos.Size)
-				return pos.Size
+				// 🔥 关键修复：只有持仓不为0时才认为有持仓
+				if math.Abs(pos.Size) > 0.0000001 {
+					logger.Debug("🔍 [持仓恢复] 找到持仓 (PositionInfo): %.4f", pos.Size)
+					return pos.Size
+				}
 			}
 		}
+		// 没有找到有效的持仓
+		return 0
 	case []interface{}:
 		// 通用接口数组 - 尝试解析为持仓结构
 		for _, pos := range positions {
 			// 尝试直接类型断言为 PositionInfo
 			if posInfo, ok := pos.(*PositionInfo); ok {
 				if posInfo.Symbol == spm.config.Trading.Symbol {
-					logger.Debug("🔍 [持仓恢复] 找到持仓 (interface->PositionInfo): %.4f", posInfo.Size)
-					return posInfo.Size
+					if math.Abs(posInfo.Size) > 0.0000001 {
+						logger.Debug("🔍 [持仓恢复] 找到持仓 (interface->PositionInfo): %.4f", posInfo.Size)
+						return posInfo.Size
+					}
 				}
 			}
 			// 尝试解析为 map
 			if posMap, ok := pos.(map[string]interface{}); ok {
 				if symbol, ok := posMap["Symbol"].(string); ok && symbol == spm.config.Trading.Symbol {
 					if size, ok := posMap["Size"].(float64); ok {
-						logger.Debug("🔍 [持仓恢复] 找到持仓 (map): %.4f", size)
-						return size
+						if math.Abs(size) > 0.0000001 {
+							logger.Debug("🔍 [持仓恢复] 找到持仓 (map): %.4f", size)
+							return size
+						}
 					}
 				}
 			}
 		}
+		// 没有找到有效的持仓
+		return 0
 	default:
 		// 其他情况：使用反射尝试提取 Size 字段
 		logger.Debug("🔍 [持仓恢复] 持仓类型: %T，尝试使用反射提取", positionsInterface)
@@ -1832,7 +1850,14 @@ func (spm *SuperPositionManager) handleCloseShort(currentPrice float64, priceInt
 
 		// 检查真实持仓以决定是否设置ReduceOnly
 		actualPosition := spm.getExistingPosition()
-		finalReduceOnly := math.Abs(candidate.Quantity) > 0 && actualPosition < 0 // 空头持仓为负数
+		// 🔥 关键修复：只有当槽位有空单且交易所确实有空头持仓时才设置ReduceOnly
+		finalReduceOnly := false
+		if math.Abs(candidate.Quantity) > 0.0000001 && actualPosition < -0.0000001 {
+			finalReduceOnly = true
+		}
+		
+		logger.Debug("🔍 [平空ReduceOnly检查] 槽位持仓: %.4f, 交易所持仓: %.4f, ReduceOnly: %t", 
+			candidate.Quantity, actualPosition, finalReduceOnly)
 		
 		clientOID := spm.generateClientOrderID(candidate.SlotPrice, "BUY")
 		*ordersToPlace = append(*ordersToPlace, &OrderRequest{
