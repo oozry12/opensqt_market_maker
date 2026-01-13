@@ -224,11 +224,22 @@ func (b *Bot) startTrading(chatID int64) {
 		return
 	}
 
-	// 检查是否有手动启动的进程
+	// 检查是否有手动启动的进程，如果有则自动杀死
 	isRunning, pid := b.checkTradingProcess()
 	if isRunning {
-		b.sendMessage(chatID, fmt.Sprintf("⚠️ 交易程序已在运行中 (手动启动, PID: %d)\n请先使用 /stop 停止现有进程", pid))
-		return
+		b.sendMessage(chatID, fmt.Sprintf("⚠️ 检测到手动启动的交易程序 (PID: %d)，正在自动停止...", pid))
+		if err := b.killProcessByPID(pid); err != nil {
+			b.sendMessage(chatID, fmt.Sprintf("❌ 自动停止失败: %v，请手动停止后重试", err))
+			return
+		}
+		// 等待进程完全退出
+		time.Sleep(1 * time.Second)
+		// 再次确认进程已停止
+		if stillRunning, _ := b.checkTradingProcess(); stillRunning {
+			b.sendMessage(chatID, "❌ 进程停止失败，请手动停止后重试")
+			return
+		}
+		b.sendMessage(chatID, "✅ 已自动停止旧进程")
 	}
 
 	b.sendMessage(chatID, "🚀 正在启动交易程序...")
@@ -693,6 +704,22 @@ func (b *Bot) checkTradingProcess() (bool, int) {
 	}
 
 	return false, 0
+}
+
+// killProcessByPID 通过PID杀死进程
+func (b *Bot) killProcessByPID(pid int) error {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("taskkill", "/F", "/PID", strconv.Itoa(pid))
+	} else {
+		cmd = exec.Command("kill", "-9", strconv.Itoa(pid))
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("停止进程失败: %v, 输出: %s", err, string(output))
+	}
+	return nil
 }
 
 // gitPullAndRebuild 下载最新的编译好的二进制文件
