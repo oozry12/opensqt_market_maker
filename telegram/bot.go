@@ -82,6 +82,20 @@ func (b *Bot) Start() {
 		}
 	}()
 
+	// 启动定时发送日志的任务
+	go func() {
+		ticker := time.NewTicker(2 * time.Minute) // 每2分钟发送一次日志
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			if b.isRunning {
+				for userID := range b.allowedUsers {
+					b.sendLogs(userID) // 发送最近的日志
+				}
+			}
+		}
+	}()
+
 	for update := range updates {
 		// 处理回调查询（按钮点击）
 		if update.CallbackQuery != nil {

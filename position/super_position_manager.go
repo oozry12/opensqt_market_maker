@@ -636,6 +636,10 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 			usePostOnly := slot.PostOnlyFailCount < 3
 			slot.mu.Unlock()
 
+			// 检查真实持仓以决定是否设置ReduceOnly
+			actualPosition := spm.getExistingPosition()
+			finalReduceOnly := currentQty > 0 && actualPosition > 0
+			
 			// 生成 ClientOrderID (注意：使用 SlotPrice 即买入价作为标识)
 			clientOID := spm.generateClientOrderID(candidate.SlotPrice, "SELL")
 
@@ -645,7 +649,7 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 				Price:         candidate.SellPrice,
 				Quantity:      candidate.Quantity,
 				PriceDecimals: spm.priceDecimals,
-				ReduceOnly:    currentQty > 0, // Only set ReduceOnly if there's an actual position to close
+				ReduceOnly:    finalReduceOnly, // Only set ReduceOnly if there's both slot position and actual exchange position
 				PostOnly:      usePostOnly,
 				ClientOrderID: clientOID, // 🔥
 			})
@@ -1826,6 +1830,10 @@ func (spm *SuperPositionManager) handleCloseShort(currentPrice float64, priceInt
 		usePostOnly := slot.PostOnlyFailCount < 3
 		slot.mu.Unlock()
 
+		// 检查真实持仓以决定是否设置ReduceOnly
+		actualPosition := spm.getExistingPosition()
+		finalReduceOnly := math.Abs(candidate.Quantity) > 0 && actualPosition < 0 // 空头持仓为负数
+		
 		clientOID := spm.generateClientOrderID(candidate.SlotPrice, "BUY")
 		*ordersToPlace = append(*ordersToPlace, &OrderRequest{
 			Symbol:        spm.config.Trading.Symbol,
@@ -1833,7 +1841,7 @@ func (spm *SuperPositionManager) handleCloseShort(currentPrice float64, priceInt
 			Price:         candidate.ClosePrice,
 			Quantity:      candidate.Quantity,
 			PriceDecimals: spm.priceDecimals,
-			ReduceOnly:    math.Abs(candidate.Quantity) > 0, // Only set ReduceOnly if there's an actual position to close
+			ReduceOnly:    finalReduceOnly, // Only set ReduceOnly if there's an actual position to close
 			PostOnly:      usePostOnly,
 			ClientOrderID: clientOID,
 		})
