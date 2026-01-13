@@ -342,13 +342,18 @@ func (d *CrashDetector) detect() {
 
 	oldShouldShort := d.shouldShort
 
-	// 判断当前价格是否在做空区域内
-	if d.currentPrice >= d.shortZoneMin && d.currentPrice <= d.shortZoneMax {
+	// 改进逻辑：只要做空区域有效，就允许挂空单
+	// 不再依赖当前价格是否在做空区域内
+	if d.anchorHighest > 0 && d.shortZoneMin > 0 && d.shortZoneMax > d.shortZoneMin {
 		d.shouldShort = true
-		if d.currentPrice >= highest*2.0 {
+		// 根据当前价格与锚点的比例确定级别
+		crashRate := d.currentPrice / d.anchorHighest
+		if crashRate >= 2.0 {
 			d.currentLevel = CrashSevere // 2倍以上，高位区域
+		} else if crashRate >= cfg.MinMultiplier && crashRate <= cfg.MaxMultiplier {
+			d.currentLevel = CrashMild // 在做空区域内
 		} else {
-			d.currentLevel = CrashMild // 1.2-2倍，开空区域
+			d.currentLevel = CrashNone // 不在做空区域内但允许挂单
 		}
 	} else {
 		d.shouldShort = false

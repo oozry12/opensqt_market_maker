@@ -1610,11 +1610,8 @@ func (spm *SuperPositionManager) handleShortGrid(currentPrice float64, priceInte
 		return 0
 	}
 
-	// 🔥 安全检查：做空区域必须在当前价格上方，避免与做多网格冲突
-	if shortZoneMin <= currentPrice {
-		logger.Debug("🔍 [做空网格] 做空区域 %.6f <= 当前价格 %.6f，跳过", shortZoneMin, currentPrice)
-		return 0
-	}
+	// 移除安全检查：在做空区域内挂空单，无论当前价格如何
+	// 原先的安全检查限制了在做空区域挂单的灵活性
 
 	logger.Debug("🔍 [做空网格] 锚点:%.6f, 做空区域:[%.6f ~ %.6f], 当前价格:%.6f",
 		anchor, shortZoneMin, shortZoneMax, currentPrice)

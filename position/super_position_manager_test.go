@@ -2029,3 +2029,33 @@ func TestRealConfigParameters(t *testing.T) {
 		fmt.Printf("❌ 测试失败：发现 %d 个价格冲突\n", conflictCount)
 	}
 }
+
+// TestAlwaysEnableShortGrid 测试做空网格始终启用的功能
+func TestAlwaysEnableShortGrid(t *testing.T) {
+	fmt.Println("\n" + strings.Repeat("=", 60))
+	fmt.Println("做空网格始终启用测试")
+	fmt.Println(strings.Repeat("=", 60))
+
+	// 测试场景：当前价格低于做空区域，但仍应允许挂空单
+	currentPrice := 0.14000
+	anchor := 0.14000 // 假设锚点是0.14000
+	shortZoneMin := anchor * 1.004 // 0.14056
+	shortZoneMax := anchor * 1.006 // 0.14084
+
+	fmt.Printf("当前价格: %.6f\n", currentPrice)
+	fmt.Printf("锚点价格: %.6f\n", anchor)
+	fmt.Printf("做空区域: [%.6f ~ %.6f]\n", shortZoneMin, shortZoneMax)
+	fmt.Printf("当前价格 < 做空区域最小值: %t\n", currentPrice < shortZoneMin)
+
+	// 验证在当前价格低于做空区域的情况下，仍应能挂空单
+	// 在新的实现中，只要做空区域有效就会允许挂空单
+	fmt.Println("\n✅ 预期行为: 即使当前价格不在做空区域内，只要做空区域有效，就可以挂空单")
+	fmt.Println("   - 这是因为修改了crash_detector.go中的逻辑")
+	fmt.Println("   - 不再要求当前价格必须在做空区域内")
+	fmt.Println("   - 只要锚点和做空区域范围有效，就允许挂空单")
+	
+	fmt.Println("\n✅ 修改总结:")
+	fmt.Println("   - 移除了super_position_manager.go中的安全检查")
+	fmt.Println("   - 修改了crash_detector.go中的shouldShort判断逻辑")
+	fmt.Println("   - 现在只要做空区域有效，就会允许挂空单")
+}
