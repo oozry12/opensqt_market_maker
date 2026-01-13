@@ -223,6 +223,27 @@ func (spm *SuperPositionManager) SetCrashDetector(detector *monitor.CrashDetecto
 	spm.crashDetector = detector
 }
 
+// GetDowntrendDetector 获取阴跌检测器
+func (spm *SuperPositionManager) GetDowntrendDetector() *monitor.DowntrendDetector {
+	return spm.downtrendDetector
+}
+
+// GetATRCalculator 获取ATR计算器
+func (spm *SuperPositionManager) GetATRCalculator() *monitor.ATRCalculator {
+	return spm.atrCalculator
+}
+
+// UpdateCurrentPrice 更新当前价格
+func (spm *SuperPositionManager) UpdateCurrentPrice(price float64) {
+	spm.lastMarketPrice.Store(price)
+}
+
+// HandleTradingLogic 处理交易逻辑 - 这是核心的交易执行方法
+func (spm *SuperPositionManager) HandleTradingLogic(currentPrice float64) error {
+	// 调用调整订单的方法
+	return spm.AdjustOrders(currentPrice)
+}
+
 func (spm *SuperPositionManager) GetSlots() *sync.Map {
 	return &spm.slots
 }
@@ -624,7 +645,7 @@ func (spm *SuperPositionManager) AdjustOrders(currentPrice float64) error {
 				Price:         candidate.SellPrice,
 				Quantity:      candidate.Quantity,
 				PriceDecimals: spm.priceDecimals,
-				ReduceOnly:    true,
+				ReduceOnly:    currentQty > 0, // Only set ReduceOnly if there's an actual position to close
 				PostOnly:      usePostOnly,
 				ClientOrderID: clientOID, // 🔥
 			})
@@ -1812,7 +1833,7 @@ func (spm *SuperPositionManager) handleCloseShort(currentPrice float64, priceInt
 			Price:         candidate.ClosePrice,
 			Quantity:      candidate.Quantity,
 			PriceDecimals: spm.priceDecimals,
-			ReduceOnly:    true,
+			ReduceOnly:    math.Abs(candidate.Quantity) > 0, // Only set ReduceOnly if there's an actual position to close
 			PostOnly:      usePostOnly,
 			ClientOrderID: clientOID,
 		})

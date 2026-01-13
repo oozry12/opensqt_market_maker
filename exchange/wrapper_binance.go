@@ -265,6 +265,10 @@ func (w *binanceWrapper) StopKlineStream() error {
 	return w.adapter.StopKlineStream()
 }
 
+func (w *binanceWrapper) ForceReconnectKlineStream() error {
+	return w.adapter.ForceReconnectKlineStream()
+}
+
 func (w *binanceWrapper) GetHistoricalKlines(ctx context.Context, symbol string, interval string, limit int) ([]*Candle, error) {
 	candles, err := w.adapter.GetHistoricalKlines(ctx, symbol, interval, limit)
 	if err != nil {

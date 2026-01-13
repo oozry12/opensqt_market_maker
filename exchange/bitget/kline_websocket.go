@@ -421,3 +421,30 @@ func (k *KlineWebSocketManager) readLoop(ctx context.Context, conn *websocket.Co
 		}
 	}
 }
+
+// ForceReconnect 强制重新连接K线流
+func (k *KlineWebSocketManager) ForceReconnect() error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
+	if !k.isRunning {
+		return fmt.Errorf("K线流未启动，无法重新连接")
+	}
+
+	logger.Info("🔄 [Bitget K线] 正在强制重新连接...")
+
+	// 关闭现有连接
+	if k.conn != nil {
+		k.conn.Close()
+		k.conn = nil
+	}
+
+	// 重新订阅（使用保存的符号和间隔）
+	if err := k.subscribe(k.symbols, k.interval); err != nil {
+		logger.Error("❌ [Bitget K线] 重新订阅失败: %v", err)
+		return err
+	}
+
+	logger.Info("✅ [Bitget K线] 强制重新连接完成")
+	return nil
+}

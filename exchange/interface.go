@@ -75,6 +75,9 @@ type IExchange interface {
 	// StopKlineStream 停止K线流
 	StopKlineStream() error
 
+	// ForceReconnectKlineStream 强制重新连接K线流
+	ForceReconnectKlineStream() error
+
 	// GetHistoricalKlines 获取历史K线数据
 	GetHistoricalKlines(ctx context.Context, symbol string, interval string, limit int) ([]*Candle, error)
 

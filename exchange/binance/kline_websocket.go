@@ -170,6 +170,28 @@ func (k *KlineWebSocketManager) connectLoop(ctx context.Context) {
 	}
 }
 
+// ForceReconnect 强制重新连接K线流
+func (k *KlineWebSocketManager) ForceReconnect() error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
+	if !k.isRunning {
+		return fmt.Errorf("K线流未启动，无法重新连接")
+	}
+
+	logger.Info("🔄 [Binance K线] 正在强制重新连接...")
+
+	// 关闭现有连接
+	if k.conn != nil {
+		k.conn.Close()
+		k.conn = nil
+	}
+
+	// 由于Binance使用连接循环，关闭连接会自动触发重连
+	logger.Info("✅ [Binance K线] 强制重新连接完成")
+	return nil
+}
+
 // pingLoop 心跳保活循环
 func (k *KlineWebSocketManager) pingLoop(ctx context.Context, conn *websocket.Conn) {
 	ticker := time.NewTicker(k.pingInterval)

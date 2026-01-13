@@ -580,9 +580,17 @@ func (r *RiskMonitor) printMovingAverages(inRiskControl bool) {
 		}
 	}
 
-	// 如果有过期数据，发出警告
+	// 如果有过期数据，发出警告并尝试重连
 	if hasStaleData {
 		logger.Warn("⚠️ [K线数据] 部分币种的K线数据超过2分钟未更新，可能K线流断开或重连中")
+		
+		// 尝试强制重新连接K线流
+		logger.Info("🔄 [K线数据] 正在尝试强制重新连接K线流...")
+		if err := r.exchange.ForceReconnectKlineStream(); err != nil {
+			logger.Error("❌ [K线数据] 强制重新连接失败: %v", err)
+		} else {
+			logger.Info("✅ [K线数据] 已发送强制重新连接指令")
+		}
 	}
 }
 

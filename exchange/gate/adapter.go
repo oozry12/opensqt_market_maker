@@ -689,6 +689,14 @@ func (g *GateAdapter) StopKlineStream() {
 	}
 }
 
+// ForceReconnectKlineStream 强制重新连接K线流
+func (g *GateAdapter) ForceReconnectKlineStream() error {
+	if g.klineWSManager != nil {
+		return g.klineWSManager.ForceReconnect()
+	}
+	return fmt.Errorf("K线流管理器未初始化")
+}
+
 // calculateDecimalPlaces 计算小数位数
 func calculateDecimalPlaces(value float64) int {
 	if value >= 1 {

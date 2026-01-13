@@ -973,6 +973,14 @@ func (b *BitgetAdapter) StopKlineStream() error {
 	return nil
 }
 
+// ForceReconnectKlineStream 强制重新连接K线流
+func (b *BitgetAdapter) ForceReconnectKlineStream() error {
+	if b.klineWSManager != nil {
+		return b.klineWSManager.ForceReconnect()
+	}
+	return fmt.Errorf("K线流管理器未初始化")
+}
+
 // GetHistoricalKlines 获取历史K线数据
 func (b *BitgetAdapter) GetHistoricalKlines(ctx context.Context, symbol string, interval string, limit int) ([]*Candle, error) {
 	// Bitget 支持的K线周期映射

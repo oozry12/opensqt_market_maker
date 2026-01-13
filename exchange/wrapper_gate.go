@@ -283,6 +283,10 @@ func (w *gateWrapper) StopKlineStream() error {
 	return nil
 }
 
+func (w *gateWrapper) ForceReconnectKlineStream() error {
+	return w.adapter.ForceReconnectKlineStream()
+}
+
 func (w *gateWrapper) GetHistoricalKlines(ctx context.Context, symbol string, interval string, limit int) ([]*Candle, error) {
 	gateCandles, err := w.adapter.GetHistoricalKlines(ctx, symbol, interval, limit)
 	if err != nil {
