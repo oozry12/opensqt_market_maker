@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -244,11 +245,33 @@ func (k *KlineWebSocketManager) pingLoop(ctx context.Context, conn *websocket.Co
 
 // readLoop 读取消息循环
 func (k *KlineWebSocketManager) readLoop(ctx context.Context, conn *websocket.Conn) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("❌ [Gate K线] WebSocket读取协程panic: %v", r)
+		}
+		conn.Close()
+	}()
+
+	// 设置Pong处理器
+	conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		logger.Debug("💓 [Gate K线] 收到Pong")
+		conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+		return nil
+	})
+	
+	// 设置Ping处理器，自动回复Pong
+	conn.SetPingHandler(func(appData string) error {
+		logger.Debug("🏓 [Gate K线] 收到Ping，回复Pong")
+		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		return conn.WriteMessage(websocket.PongMessage, []byte{})
+	})
+
 	for {
 		select {
-		case <-ctx.Done():
-			return
 		case <-k.done:
+			return
+		case <-ctx.Done():
 			return
 		default:
 		}
@@ -265,6 +288,12 @@ func (k *KlineWebSocketManager) readLoop(ctx context.Context, conn *websocket.Co
 				return
 			}
 			
+			// 检查是否是网络临时错误，如果是则记录但不立即断开
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				logger.Warn("⚠️ [Gate K线] WebSocket网络超时: %v", err)
+				continue // 尝试继续读取而不是断开连接
+			}
+			
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				logger.Warn("⚠️ [Gate K线] WebSocket异常关闭: %v", err)
 			} else {
@@ -272,6 +301,9 @@ func (k *KlineWebSocketManager) readLoop(ctx context.Context, conn *websocket.Co
 			}
 			return
 		}
+
+		// 重置读取超时
+		conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 
 		k.handleMessage(message)
 	}

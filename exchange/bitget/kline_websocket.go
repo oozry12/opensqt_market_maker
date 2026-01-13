@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -319,6 +320,12 @@ func (k *KlineWebSocketManager) readLoop(ctx context.Context, conn *websocket.Co
 				// 连接已被其他地方关闭
 				logger.Debug("Bitget K线WebSocket连接已被其他协程关闭")
 				return
+			}
+			
+			// 检查是否是网络临时错误，如果是则记录但不立即断开
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				logger.Warn("⚠️ Bitget K线WebSocket网络超时: %v", err)
+				continue // 尝试继续读取而不是断开连接
 			}
 			
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
