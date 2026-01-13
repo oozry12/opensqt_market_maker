@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,7 +45,7 @@ func NewKlineWebSocketManager() *KlineWebSocketManager {
 	return &KlineWebSocketManager{
 		done:           make(chan struct{}),
 		callbacks:      make(map[string]func(candle interface{})),
-		reconnectDelay: 5 * time.Second,  // 重连延迟
+		reconnectDelay: 10 * time.Second, // 增加重连延迟，避免频繁重连
 		pingInterval:   15 * time.Second, // Ping间隔（Bitget官方SDK使用15秒）
 	}
 }
@@ -102,9 +103,13 @@ func (k *KlineWebSocketManager) connectLoop(ctx context.Context) {
 		// Bitget WebSocket URL
 		wsURL := "wss://ws.bitget.com/v2/ws/public"
 
+		// 设置连接头部，模拟浏览器行为
+		headers := make(http.Header)
+		headers.Set("User-Agent", "Mozilla/5.0 (compatible; opensqt-market-maker/1.0)")
+		
 		logger.Info("🔗 正在连接 Bitget K线WebSocket...")
 
-		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
 		if err != nil {
 			logger.Error("❌ Bitget K线WebSocket连接失败: %v，%v后重试", err, k.reconnectDelay)
 			// 使用 select 等待，可以立即响应 context 取消
@@ -306,6 +311,16 @@ func (k *KlineWebSocketManager) readLoop(ctx context.Context, conn *websocket.Co
 
 		_, message, err := conn.ReadMessage()
 		if err != nil {
+			// 检查连接是否已被其他地方关闭
+			k.mu.RLock()
+			currentConn := k.conn
+			k.mu.RUnlock()
+			if currentConn != conn {
+				// 连接已被其他地方关闭
+				logger.Debug("Bitget K线WebSocket连接已被其他协程关闭")
+				return
+			}
+			
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				logger.Warn("⚠️ Bitget K线WebSocket异常关闭: %v", err)
 			} else {

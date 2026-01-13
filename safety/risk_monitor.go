@@ -25,6 +25,7 @@ type RiskMonitor struct {
 	mu            sync.RWMutex
 	triggered     bool
 	lastMsg       string
+	lastReconnect time.Time // 上次重连时间，用于防抖
 }
 
 // NewRiskMonitor 创建风控监视器
@@ -584,12 +585,24 @@ func (r *RiskMonitor) printMovingAverages(inRiskControl bool) {
 	if hasStaleData {
 		logger.Warn("⚠️ [K线数据] 部分币种的K线数据超过2分钟未更新，可能K线流断开或重连中")
 		
-		// 尝试强制重新连接K线流
-		logger.Info("🔄 [K线数据] 正在尝试强制重新连接K线流...")
-		if err := r.exchange.ForceReconnectKlineStream(); err != nil {
-			logger.Error("❌ [K线数据] 强制重新连接失败: %v", err)
+		// 添加防抖机制，避免频繁重连
+		r.mu.Lock()
+		timeSinceLastReconnect := time.Since(r.lastReconnect)
+		r.mu.Unlock()
+		
+		if timeSinceLastReconnect < 30*time.Second {
+			logger.Info("🔄 [K线数据] 距离上次重连不足30秒，跳过本次重连")
 		} else {
-			logger.Info("✅ [K线数据] 已发送强制重新连接指令")
+			// 尝试强制重新连接K线流
+			logger.Info("🔄 [K线数据] 正在尝试强制重新连接K线流...")
+			if err := r.exchange.ForceReconnectKlineStream(); err != nil {
+				logger.Error("❌ [K线数据] 强制重新连接失败: %v", err)
+			} else {
+				r.mu.Lock()
+				r.lastReconnect = time.Now() // 更新重连时间
+				r.mu.Unlock()
+				logger.Info("✅ [K线数据] 已发送强制重新连接指令")
+			}
 		}
 	}
 }

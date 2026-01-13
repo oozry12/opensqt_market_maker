@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,9 +46,9 @@ func NewKlineWebSocketManager() *KlineWebSocketManager {
 	return &KlineWebSocketManager{
 		done:           make(chan struct{}),
 		callbacks:      make(map[string]func(candle interface{})),
-		reconnectDelay: 5 * time.Second,  // 重连延迟
-		pingInterval:   30 * time.Second, // Ping间隔
-		pongWait:       60 * time.Second, // Pong等待超时
+		reconnectDelay: 15 * time.Second, // 增加重连延迟，避免频繁重连
+		pingInterval:   30 * time.Second, // 心跳间隔
+		pongWait:       90 * time.Second, // Pong等待超时，更长的超时时间提高连接稳定性
 	}
 }
 
@@ -106,11 +107,15 @@ func (k *KlineWebSocketManager) connectLoop(ctx context.Context) {
 		for i, symbol := range k.symbols {
 			streams[i] = fmt.Sprintf("%s@kline_%s", strings.ToLower(symbol), k.interval)
 		}
-		wsURL := fmt.Sprintf("wss://fstream.binance.com/stream?streams=%s", strings.Join(streams, "/"))
+		wsURL := fmt.Sprintf("wss://fstream.binance.com/stream?streams=%s", strings.Join(streams, "/"))  // 使用多路复用流
 
 		logger.Info("🔗 正在连接 Binance K线WebSocket...")
 
-		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		// 设置连接头部，模拟浏览器行为
+		headers := make(http.Header)
+		headers.Set("User-Agent", "Mozilla/5.0 (compatible; opensqt-market-maker/1.0)")
+		
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
 		if err != nil {
 			logger.Error("❌ K线WebSocket连接失败: %v，%v后重试", err, k.reconnectDelay)
 			// 使用 select 等待，可以立即响应 context 取消
@@ -183,7 +188,10 @@ func (k *KlineWebSocketManager) ForceReconnect() error {
 
 	// 关闭现有连接
 	if k.conn != nil {
-		k.conn.Close()
+		err := k.conn.Close()
+		if err != nil {
+			logger.Warn("⚠️ 关闭K线WebSocket连接时出错: %v", err)
+		}
 		k.conn = nil
 	}
 
@@ -261,6 +269,13 @@ func (k *KlineWebSocketManager) readLoop(ctx context.Context, conn *websocket.Co
 		conn.SetReadDeadline(time.Now().Add(k.pongWait))
 		return nil
 	})
+	
+	// 设置Ping处理器，自动回复Pong
+	conn.SetPingHandler(func(appData string) error {
+		logger.Debug("🏓 K线WebSocket收到Ping，回复Pong")
+		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		return conn.WriteMessage(websocket.PongMessage, []byte{})
+	})
 
 	for {
 		select {
@@ -273,6 +288,22 @@ func (k *KlineWebSocketManager) readLoop(ctx context.Context, conn *websocket.Co
 
 		_, message, err := conn.ReadMessage()
 		if err != nil {
+			// 检查连接是否已被其他地方关闭
+			k.mu.RLock()
+			currentConn := k.conn
+			k.mu.RUnlock()
+			if currentConn != conn {
+				// 连接已被其他地方关闭
+				logger.Debug("K线WebSocket连接已被其他协程关闭")
+				return
+			}
+			
+			// 检查是否是网络临时错误，如果是则记录但不立即断开
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				logger.Warn("⚠️ K线WebSocket网络超时: %v", err)
+				continue // 尝试继续读取而不是断开连接
+			}
+			
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				logger.Warn("⚠️ K线WebSocket异常关闭: %v", err)
 			} else {

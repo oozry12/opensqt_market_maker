@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -35,7 +36,7 @@ func NewKlineWebSocketManager(settle string) *KlineWebSocketManager {
 	return &KlineWebSocketManager{
 		done:           make(chan struct{}),
 		callbacks:      make(map[string]func(candle interface{})),
-		reconnectDelay: 5 * time.Second,
+		reconnectDelay: 10 * time.Second, // 增加重连延迟，避免频繁重连
 		pingInterval:   15 * time.Second,
 		settle:         settle,
 	}
@@ -94,9 +95,13 @@ func (k *KlineWebSocketManager) connectLoop(ctx context.Context) {
 		// Gate.io WebSocket URL
 		wsURL := fmt.Sprintf("wss://fx-ws.gateio.ws/v4/ws/%s", k.settle)
 
+		// 设置连接头部，模拟浏览器行为
+		headers := make(http.Header)
+		headers.Set("User-Agent", "Mozilla/5.0 (compatible; opensqt-market-maker/1.0)")
+		
 		logger.Info("🔗 [Gate K线] 正在连接 WebSocket...")
 
-		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
 		if err != nil {
 			logger.Error("❌ [Gate K线] WebSocket连接失败: %v，%v后重试", err, k.reconnectDelay)
 			// 使用 select 等待，可以立即响应 context 取消
@@ -250,7 +255,21 @@ func (k *KlineWebSocketManager) readLoop(ctx context.Context, conn *websocket.Co
 
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			logger.Warn("⚠️ [Gate K线] 读取消息失败: %v", err)
+			// 检查连接是否已被其他地方关闭
+			k.mu.RLock()
+			currentConn := k.conn
+			k.mu.RUnlock()
+			if currentConn != conn {
+				// 连接已被其他地方关闭
+				logger.Debug("[Gate K线] 连接已被其他协程关闭")
+				return
+			}
+			
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				logger.Warn("⚠️ [Gate K线] WebSocket异常关闭: %v", err)
+			} else {
+				logger.Debug("[Gate K线] 读取消息失败: %v", err)
+			}
 			return
 		}
 
@@ -419,7 +438,10 @@ func (k *KlineWebSocketManager) ForceReconnect() error {
 
 	// 关闭现有连接
 	if k.conn != nil {
-		k.conn.Close()
+		err := k.conn.Close()
+		if err != nil {
+			logger.Warn("⚠️ [Gate K线] 关闭WebSocket连接时出错: %v", err)
+		}
 		k.conn = nil
 	}
 
