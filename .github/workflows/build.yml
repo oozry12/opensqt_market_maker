@@ -8,11 +8,10 @@ jobs:
   build:
     name: Build Binaries
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         include:
-          # Linux builds only
           - goos: linux
             goarch: amd64
           - goos: linux
@@ -57,18 +56,10 @@ jobs:
       run: |
         go build -ldflags="-s -w" -o dist/telegram_bot ./cmd/telegram_bot
 
-    - name: Build Webhook Server
-      env:
-        GOOS: ${{ matrix.goos }}
-        GOARCH: ${{ matrix.goarch }}
-        CGO_ENABLED: 0
-      run: |
-        go build -ldflags="-s -w" -o dist/webhook_server ./cmd/webhook_server
-
     - name: Create archive
       run: |
         cd dist
-        tar -czf opensqt-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz opensqt telegram_bot webhook_server
+        tar -czf opensqt-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz opensqt telegram_bot
         cd ..
 
     - name: Upload artifacts
@@ -82,7 +73,7 @@ jobs:
     name: Create or Update Latest Release
     needs: build
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
@@ -109,89 +100,35 @@ jobs:
         name: Latest Build
         body: |
           自动构建的最新版本
-          
+
           构建时间: ${{ github.event.head_commit.timestamp }}
           提交信息: ${{ github.event.head_commit.message }}
           提交SHA: ${{ github.sha }}
-          
+
           ## 下载说明
           - `opensqt-linux-amd64.tar.gz` - Linux x86_64 版本
           - `opensqt-linux-arm64.tar.gz` - Linux ARM64 版本
-          
+
           ## 包含文件
           - `opensqt` - 主交易程序
           - `telegram_bot` - Telegram 控制器
-          - `webhook_server` - Webhook 自动部署服务器
-          
+
           ## 使用方法
           ```bash
           # 下载对应架构的文件
           wget https://github.com/${{ github.repository }}/releases/download/latest/opensqt-linux-amd64.tar.gz
-          
+
           # 解压
           tar -xzf opensqt-linux-amd64.tar.gz
-          
+
           # 添加执行权限
-          chmod +x opensqt telegram_bot webhook_server
-          
+          chmod +x opensqt telegram_bot
+
           # 启动 Telegram Bot
           ./telegram_bot
-          
-          # 启动 Webhook 服务器（可选，用于自动部署）
-          ./start_webhook.sh
           ```
         files: release/*.tar.gz
         prerelease: false
         draft: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Trigger webhook deployment
-      if: success()
-      continue-on-error: true
-      env:
-        WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-        WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
-      run: |
-        if [ -n "$WEBHOOK_URL" ]; then
-          echo "📡 触发 Webhook 部署..."
-          
-          # 构建 JSON payload
-          PAYLOAD=$(cat <<EOF
-        {
-          "ref": "${{ github.ref }}",
-          "repository": {
-            "full_name": "${{ github.repository }}"
-          },
-          "head_commit": {
-            "message": "Auto deploy from GitHub Actions",
-            "id": "${{ github.sha }}"
-          }
-        }
-        EOF
-        )
-          
-          # 计算签名（使用完整的 payload）
-          if [ -n "$WEBHOOK_SECRET" ]; then
-            SIGNATURE="sha256=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | sed 's/^.* //')"
-            echo "🔐 使用签名验证"
-            curl -X POST "$WEBHOOK_URL" \
-              -H "Content-Type: application/json" \
-              -H "X-Hub-Signature-256: $SIGNATURE" \
-              -d "$PAYLOAD" \
-              --max-time 10 \
-              -v
-          else
-            echo "⚠️ 未配置 WEBHOOK_SECRET，不使用签名"
-            curl -X POST "$WEBHOOK_URL" \
-              -H "Content-Type: application/json" \
-              -d "$PAYLOAD" \
-              --max-time 10 \
-              -v
-          fi
-          
-          echo ""
-          echo "✅ Webhook 请求已发送"
-        else
-          echo "ℹ️ 未配置 WEBHOOK_URL，跳过 Webhook 触发"
-        fi

@@ -106,7 +106,7 @@ opensqt_platform/
 **一键部署脚本**：
 ```bash
 # 下载部署脚本
-wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/quick_deploy.sh
+wget https://raw.githubusercontent.com/oozry12/opensqt_market_maker/main/quick_deploy.sh
 
 # 添加执行权限
 chmod +x quick_deploy.sh
@@ -127,10 +127,10 @@ chmod +x quick_deploy.sh
    ```bash
    # 根据你的架构选择下载
    # x86_64 架构:
-   wget https://github.com/dennisyang1986/opensqt_market_maker/releases/download/latest/opensqt-linux-amd64.tar.gz
+   wget https://github.com/oozry12/opensqt_market_maker/releases/download/latest/opensqt-linux-amd64.tar.gz
    
    # ARM64 架构:
-   wget https://github.com/dennisyang1986/opensqt_market_maker/releases/download/latest/opensqt-linux-arm64.tar.gz
+   wget https://github.com/oozry12/opensqt_market_maker/releases/download/latest/opensqt-linux-arm64.tar.gz
    ```
 
 2. **解压文件**
@@ -139,11 +139,32 @@ chmod +x quick_deploy.sh
    chmod +x opensqt telegram_bot
    ```
 
+1. **下载一键部署脚本**
+
+   ```bash
+   wget https://raw.githubusercontent.com/oozry12/opensqt_market_maker/main/quick_deploy.sh
+   chmod +x quick_deploy.sh
+   ```
+
+2. **运行部署脚本**
+
+   ```bash
+   ./quick_deploy.sh
+   ```
+
+   这个脚本会自动：
+   - 检测系统架构
+   - 下载最新的预编译二进制文件
+   - 解压并设置权限
+   - 停止现有服务
+   - 备份并恢复配置文件
+   - 启动 Telegram Bot
+
 3. **配置环境变量**
    ```bash
    # 下载配置文件模板
-   wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/.env.example -O .env
-   wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/config.yaml -O config.yaml
+   wget https://raw.githubusercontent.com/oozry12/opensqt_market_maker/main/.env.example -O .env
+   wget https://raw.githubusercontent.com/oozry12/opensqt_market_maker/main/config.yaml -O config.yaml
    
    # 编辑配置
    nano .env        # 填入 API 密钥和 Telegram Bot 配置
@@ -153,7 +174,7 @@ chmod +x quick_deploy.sh
 4. **启动服务**
    ```bash
    # 下载启动脚本
-   wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/start_bot.sh
+   wget https://raw.githubusercontent.com/oozry12/opensqt_market_maker/main/start_bot.sh
    chmod +x start_bot.sh
    
    # 启动 Telegram Bot
@@ -253,41 +274,12 @@ trading:
    - 📊 **实时监控**：接收交易成交、风控触发等关键事件通知
    - ⚙️ **配置管理**：通过聊天界面修改交易参数
 
-### 自动部署（高级功能）
-
-配置 Webhook 后，每次 push 代码到 GitHub，服务器会自动更新到最新版本：
-
-1. **配置并启用 Webhook**
-   ```bash
-   # 配置 .env 文件
-   echo "WEBHOOK_SECRET=$(openssl rand -hex 32)" >> .env
-   echo "WEBHOOK_PORT=9001" >> .env
-   
-   # 重新部署并启用 Webhook
-   ./quick_deploy.sh
-   ```
-
-2. **配置 GitHub Secrets**
-   - 进入仓库 Settings → Secrets and variables → Actions
-   - 添加 `WEBHOOK_URL`: `http://your-server-ip:9001/webhook`
-   - 添加 `WEBHOOK_SECRET`: 与 .env 中相同的密码
-
-3. **完成！**
-   - 现在每次 push 代码，服务器会自动下载并部署最新版本
-   - 详细配置请参阅 [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md)
-
-   **优势**：
-   - 🔄 **全自动部署**：push 代码后自动更新服务器
-   - 🔒 **安全验证**：使用 HMAC-SHA256 签名验证
-   - 📦 **零停机更新**：自动停止旧版本，启动新版本
-   - 📝 **完整日志**：记录每次部署的详细信息
-
 #### 方式二：从源码编译（开发者）
 
 如果你需要修改代码：
 
 ```bash
-git clone https://github.com/dennisyang1986/opensqt_market_maker.git
+git clone https://github.com/oozry12/opensqt_market_maker.git
 cd opensqt_market_maker
 chmod +x scripts/build.sh
 ./scripts/build.sh

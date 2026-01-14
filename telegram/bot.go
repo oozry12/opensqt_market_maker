@@ -133,6 +133,8 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.sendStatus(chatID)
 	case "restart":
 		b.restartTrading(chatID)
+	case "killall":
+		b.killAllProcesses(chatID)
 	case "logs":
 		b.sendLogs(chatID)
 	case "update":
@@ -164,6 +166,7 @@ func (b *Bot) sendHelp(chatID int64) {
 /run - 启动交易程序
 /stop - 停止交易程序
 /restart - 重启交易程序
+/killall - 停止所有 ./opensqt 进程
 /status - 查看运行状态
 /logs - 查看最近日志
 /update - 下载最新版本并更新
@@ -712,7 +715,11 @@ func (b *Bot) killProcessByPID(pid int) error {
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("taskkill", "/F", "/PID", strconv.Itoa(pid))
 	} else {
-		cmd = exec.Command("kill", "-9", strconv.Itoa(pid))
+		if os.Geteuid() == 0 {
+			cmd = exec.Command("kill", "-9", strconv.Itoa(pid))
+		} else {
+			cmd = exec.Command("sudo", "kill", "-9", strconv.Itoa(pid))
+		}
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -720,6 +727,122 @@ func (b *Bot) killProcessByPID(pid int) error {
 		return fmt.Errorf("停止进程失败: %v, 输出: %s", err, string(output))
 	}
 	return nil
+}
+
+// killAllProcesses 杀死所有./opensqt进程
+func (b *Bot) killAllProcesses(chatID int64) {
+	b.sendMessage(chatID, "🔪 正在查找并停止所有 ./opensqt 进程...")
+
+	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
+		b.sendMessage(chatID, "🔐 使用 sudo 权限停止进程...")
+	}
+
+	var allPIDs []int
+
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq "+b.exeName, "/FO", "CSV")
+		output, err := cmd.CombinedOutput()
+		if err == nil {
+			outputStr := string(output)
+			lines := strings.Split(outputStr, "\n")
+			for _, line := range lines {
+				if strings.Contains(line, b.exeName) && !strings.Contains(line, "No tasks are running") {
+					fields := strings.Split(line, ",")
+					if len(fields) >= 2 {
+						pidStr := strings.Trim(fields[1], "\"")
+						if pidStr != "PID" {
+							if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 {
+								allPIDs = append(allPIDs, pid)
+							}
+						}
+					}
+				}
+			}
+		}
+	} else {
+		cmd := exec.Command("pgrep", "-f", "opensqt")
+		output, err := cmd.CombinedOutput()
+		if err == nil {
+			outputStr := strings.TrimSpace(string(output))
+			if len(outputStr) > 0 {
+				pids := strings.Fields(outputStr)
+				for _, pidStr := range pids {
+					if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 {
+						allPIDs = append(allPIDs, pid)
+					}
+				}
+			}
+		}
+	}
+
+	if len(allPIDs) == 0 {
+		b.sendMessage(chatID, "✅ 没有发现运行中的 ./opensqt 进程")
+		return
+	}
+
+	successCount := 0
+	failCount := 0
+	for _, pid := range allPIDs {
+		if err := b.killProcessByPID(pid); err != nil {
+			failCount++
+			b.sendMessage(chatID, fmt.Sprintf("❌ PID %d: 停止失败: %v", pid, err))
+		} else {
+			successCount++
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	var remainingPIDs []int
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq "+b.exeName, "/FO", "CSV")
+		output, _ := cmd.CombinedOutput()
+		outputStr := string(output)
+		if strings.Contains(outputStr, b.exeName) && !strings.Contains(outputStr, "No tasks are running") {
+			lines := strings.Split(outputStr, "\n")
+			for _, line := range lines {
+				if strings.Contains(line, b.exeName) {
+					fields := strings.Split(line, ",")
+					if len(fields) >= 2 {
+						pidStr := strings.Trim(fields[1], "\"")
+						if pidStr != "PID" {
+							if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 {
+								remainingPIDs = append(remainingPIDs, pid)
+							}
+						}
+					}
+				}
+			}
+		}
+	} else {
+		cmd := exec.Command("pgrep", "-f", "opensqt")
+		output, _ := cmd.CombinedOutput()
+		outputStr := strings.TrimSpace(string(output))
+		if len(outputStr) > 0 {
+			pids := strings.Fields(outputStr)
+			for _, pidStr := range pids {
+				if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 {
+					remainingPIDs = append(remainingPIDs, pid)
+				}
+			}
+		}
+	}
+
+	resultMsg := fmt.Sprintf("✅ 停止完成\n- 成功停止: %d 个\n- 失败: %d 个", successCount, failCount)
+	if len(remainingPIDs) > 0 {
+		resultMsg += fmt.Sprintf("\n⚠️ 残留进程: %d 个 %v", len(remainingPIDs), remainingPIDs)
+	} else {
+		resultMsg += "\n✅ 所有进程已停止"
+	}
+
+	if failCount > 0 && runtime.GOOS != "windows" && os.Geteuid() != 0 {
+		resultMsg += "\n\n💡 提示: 如果停止失败，可能是 sudo 需要密码。"
+		resultMsg += "\n请在服务器上执行: sudo visudo"
+		resultMsg += "\n然后添加: ALL ALL=(ALL) NOPASSWD: /usr/bin/pkill, /usr/bin/kill"
+	}
+
+	b.sendMessage(chatID, resultMsg)
 }
 
 // gitPullAndRebuild 下载最新的编译好的二进制文件

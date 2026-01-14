@@ -1,12 +1,11 @@
 # OpenSQT 部署指南
 
-本文档提供完整的部署流程说明，包括手动部署、自动部署和故障排除。
+本文档提供完整的手动部署流程。
 
 ## 📋 目录
 
 - [快速开始](#快速开始)
 - [手动部署](#手动部署)
-- [自动部署（Webhook）](#自动部署webhook)
 - [管理命令](#管理命令)
 - [故障排除](#故障排除)
 
@@ -23,9 +22,11 @@ chmod +x quick_deploy.sh
 
 这个脚本会：
 1. 自动检测系统架构（amd64/arm64）
-2. 下载最新的预编译二进制文件
-3. 解压并设置权限
-4. 启动 Telegram Bot
+2. 从 GitHub Releases 下载最新的预编译二进制文件
+3. 停止现有服务
+4. 备份并恢复配置文件
+5. 解压并设置权限
+6. 启动 Telegram Bot
 
 ### 配置文件
 
@@ -83,7 +84,7 @@ wget https://github.com/dennisyang1986/opensqt_market_maker/releases/download/la
 
 ```bash
 tar -xzf opensqt-linux-amd64.tar.gz
-chmod +x opensqt telegram_bot webhook_server
+chmod +x opensqt telegram_bot
 ```
 
 ### 3. 下载配置文件和脚本
@@ -96,7 +97,6 @@ wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/
 # 管理脚本
 wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/start_bot.sh
 wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/stop_bot.sh
-wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/quick_deploy.sh
 
 chmod +x *.sh
 ```
@@ -113,116 +113,6 @@ nano config.yaml   # 配置交易参数
 ```bash
 ./start_bot.sh
 ```
-
-## 🔄 自动部署（Webhook）
-
-配置 Webhook 后，每次 push 代码到 GitHub，服务器会自动更新。
-
-### 快速启用（推荐）
-
-```bash
-# 1. 配置 Webhook 环境变量
-echo "WEBHOOK_SECRET=$(openssl rand -hex 32)" >> .env
-echo "WEBHOOK_PORT=9001" >> .env
-
-# 2. 重新部署并启用 Webhook
-./quick_deploy.sh
-
-# 3. 配置防火墙
-sudo ufw allow 9001/tcp
-
-# 4. 测试
-curl http://localhost:9001/health
-```
-
-### 手动配置（备选）
-
-**1. 配置 Webhook 环境变量**
-
-编辑 `.env` 文件，添加：
-```bash
-# Webhook 配置
-WEBHOOK_SECRET=your_strong_secret_here  # 生成强密码
-WEBHOOK_PORT=9001                        # 监听端口
-DEPLOY_SCRIPT=./quick_deploy.sh         # 部署脚本
-WORK_DIR=.                               # 工作目录
-```
-
-生成强密码：
-```bash
-openssl rand -hex 32
-```
-
-**2. 启动 Webhook 服务器**
-
-```bash
-# 使用 quick_deploy.sh（推荐，默认启用 Webhook）
-./quick_deploy.sh
-
-# 或使用独立脚本
-./start_webhook.sh
-```
-
-**3. 配置防火墙**
-
-```bash
-# Ubuntu/Debian
-sudo ufw allow 9001/tcp
-
-# CentOS/RHEL
-sudo firewall-cmd --permanent --add-port=9001/tcp
-sudo firewall-cmd --reload
-```
-
-### GitHub 配置
-
-**1. 添加 Secrets**
-
-进入仓库 Settings → Secrets and variables → Actions，添加：
-- `WEBHOOK_URL`: `http://your-server-ip:9001/webhook`
-- `WEBHOOK_SECRET`: 与服务器 `.env` 中相同的密码
-
-**2. 测试**
-
-```bash
-# 提交一个测试更新
-git commit -m "test webhook" --allow-empty
-git push origin main
-
-# 查看服务器日志
-tail -f webhook.log
-```
-
-### 工作流程
-
-```
-开发者 Push 代码
-    ↓
-GitHub Actions 编译
-    ↓
-发布到 Releases
-    ↓
-触发 Webhook
-    ↓
-⏰ 等待1分钟
-    ↓
-📥 更新 Git 仓库
-    ├─ git fetch --all
-    ├─ git reset --hard origin/main
-    └─ git pull
-    ↓
-服务器下载新版本（执行 quick_deploy.sh）
-    ↓
-自动重启服务（包括 Webhook 服务器）
-    ↓
-部署完成 ✅
-```
-
-**注意**：
-- Webhook 收到后会等待1分钟，确保 GitHub Actions 编译完成
-- 部署前会先更新 Git 仓库，确保脚本和配置文件是最新的
-
-详细配置请参阅 [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md)
 
 ## 🎮 管理命令
 
@@ -242,22 +132,6 @@ tail -f telegram_bot.log
 ps aux | grep telegram_bot
 ```
 
-### Webhook 服务器管理
-
-```bash
-# 启动
-./start_webhook.sh
-
-# 停止
-./stop_webhook.sh
-
-# 查看日志
-tail -f webhook.log
-
-# 查看进程
-ps aux | grep webhook_server
-```
-
 ### 交易程序管理
 
 通过 Telegram Bot 控制：
@@ -272,136 +146,172 @@ ps aux | grep webhook_server
 
 ```bash
 # 下载并部署最新版本
-./quick_deploy.sh
+./start_bot.sh
+```
+
+### 查看日志
+
+```bash
+# 实时查看日志
+tail -f opensqt.log
+
+# 查看最近100行
+tail -n 100 opensqt.log
+
+# 搜索关键词
+grep "error" opensqt.log
 ```
 
 ## 🔧 故障排除
 
-### Telegram Bot 冲突
+### 常见问题
 
-**问题**：`Conflict: terminated by other getUpdates request`
+#### 1. 进程启动失败
 
-**原因**：多个 Bot 实例同时运行
-
-**解决**：
+**检查方法**：
 ```bash
-# 停止所有实例
+# 查看进程是否在运行
+ps aux | grep opensqt
+
+# 查看端口是否被占用
+netstat -tlnp | grep 9000
+```
+
+**解决方法**：
+1. 停止现有进程
+   ```bash
+   pkill -f opensqt
+   pkill -f telegram_bot
+   ```
+
+2. 清除残留的进程锁
+   ```bash
+   rm -f opensqt.pid
+   ```
+
+3. 检查配置文件
+   ```bash
+   cat .env
+   cat config.yaml
+   ```
+
+#### 2. Telegram Bot 无法接收消息
+
+**检查方法**：
+```bash
+# 查看 Bot 日志
+tail -f telegram_bot.log
+```
+
+**可能原因**：
+1. Bot Token 错误
+2. 用户 ID 未在允许列表中
+3. 网络问题无法访问 Telegram API
+
+#### 3. 交易所 API 调用失败
+
+**检查方法**：
+```bash
+# 查看交易日志
+grep -i "error\|api\|auth" opensqt.log | tail -n 50
+```
+
+**可能原因**：
+1. API Key/Secret 错误
+2. 权限不足（未开启期货交易）
+3. IP 限制
+
+#### 4. 内存或 CPU 占用过高
+
+**检查方法**：
+```bash
+# 查看资源占用
+top -c
+
+# 查看进程详情
+ps -p $(cat opensqt.pid) -o %cpu,%mem
+```
+
+**解决方法**：
+1. 重启服务
+   ```bash
+   ./stop_bot.sh
+   ./start_bot.sh
+   ```
+
+#### 5. 交易程序意外停止
+
+**检查方法**：
+```bash
+# 查看日志中的异常
+grep -i "panic\|fatal\|crash" opensqt.log
+```
+
+**解决方法**：
+1. 检查系统资源是否充足
+2. 查看是否有 OOM Killer 杀进程
+   ```bash
+   dmesg | grep -i kill
+   ```
+
+### 日志位置
+
+| 日志文件 | 说明 |
+|---------|------|
+| `opensqt.log` | 交易程序日志 |
+| `telegram_bot.log` | Telegram Bot 日志 |
+
+### 重启服务
+
+```bash
+# 完整重启
 ./stop_bot.sh
-
-# 或手动停止
-pkill -f telegram_bot
-
-# 重新启动
 ./start_bot.sh
 ```
 
-### Webhook 未触发
+### 检查服务状态
 
-**检查服务器状态**：
 ```bash
-ps aux | grep webhook_server
-tail -f webhook.log
+# 检查进程
+ps aux | grep -E "opensqt|telegram_bot" | grep -v grep
+
+# 检查端口
+netstat -tlnp | grep -E "9000|9001"
 ```
 
-**检查防火墙**：
+### 监控服务（使用我们的监控脚本）
+
 ```bash
-sudo ufw status
-curl http://localhost:9001/health
+# 查看状态
+bash status_check.sh
+
+# 或使用 Systemd（如果已配置服务）
+systemctl status opensqt
+systemctl status telegram_bot
 ```
 
-**检查 GitHub Webhook**：
-- Settings → Webhooks → 点击你的 webhook
-- 查看 "Recent Deliveries"
+### 性能优化建议
 
-### 下载失败
+1. **内存优化**
+   - 确保服务器有足够内存（建议 2GB+）
+   - 监控内存使用情况
+   - 定期重启清理内存
 
-**问题**：无法下载 GitHub Releases
+2. **CPU 优化**
+   - 避免同时运行多个实例
+   - 合理设置价格监控频率
+   - 减少不必要的日志输出
 
-**解决**：
-```bash
-# 检查网络
-ping github.com
+3. **磁盘优化**
+   - 定期清理日志文件
+   - 使用 logrotate 自动轮转日志
+   - 监控磁盘空间使用
 
-# 使用代理（如果需要）
-export https_proxy=http://your-proxy:port
+### 获得帮助
 
-# 手动下载
-wget https://github.com/dennisyang1986/opensqt_market_maker/releases/download/latest/opensqt-linux-amd64.tar.gz
-```
+如果遇到问题：
 
-### 权限问题
-
-**问题**：`Permission denied`
-
-**解决**：
-```bash
-# 添加执行权限
-chmod +x opensqt telegram_bot webhook_server
-chmod +x *.sh
-```
-
-### 配置文件缺失
-
-**问题**：`.env` 或 `config.yaml` 不存在
-
-**解决**：
-```bash
-# 下载配置模板
-wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/.env.example -O .env
-wget https://raw.githubusercontent.com/dennisyang1986/opensqt_market_maker/main/config.yaml
-
-# 编辑配置
-nano .env
-nano config.yaml
-```
-
-## 📚 相关文档
-
-- [README.md](README.md) - 项目介绍和快速开始
-- [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md) - Webhook 详细配置
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - 常见问题解决
-- [ARCHITECTURE.md](ARCHITECTURE.md) - 系统架构说明
-- [USAGE.md](USAGE.md) - 使用指南
-
-## 🔐 安全建议
-
-1. **保护 API 密钥**
-   - 不要将 `.env` 文件提交到 Git
-   - 使用只读权限的 API 密钥（如果可能）
-   - 定期轮换密钥
-
-2. **Webhook 安全**
-   - 使用强密码（至少 32 字符）
-   - 配置防火墙限制访问
-   - 使用 HTTPS（通过 Nginx 反向代理）
-
-3. **服务器安全**
-   - 定期更新系统
-   - 使用 SSH 密钥认证
-   - 配置防火墙规则
-
-## 💡 最佳实践
-
-1. **测试环境**
-   - 先在测试网测试
-   - 使用小额资金测试
-   - 验证所有功能正常
-
-2. **监控**
-   - 定期查看日志
-   - 设置 Telegram 通知
-   - 监控服务器资源
-
-3. **备份**
-   - 备份配置文件
-   - 记录交易参数
-   - 保存重要日志
-
-4. **更新**
-   - 关注 GitHub Releases
-   - 阅读更新日志
-   - 测试后再部署到生产环境
-
----
-
-如有问题，请查看 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) 或提交 Issue。
+1. 查看[故障排除](#故障排除)章节
+2. 查看日志文件中的错误信息
+3. 在 GitHub Issues 中搜索类似问题
+4. 提交新的 Issue 描述问题
